@@ -1,0 +1,40 @@
+﻿target_lang: zh-Hans
+style: faithful_literal
+
+translate_toc: true
+translate_titles: true
+
+quote_mode:
+  preserve_original: true
+  add_translation: true
+  translation_node_class: ai-quote-translation
+
+latin_mode:
+  translate_normally: true
+
+poetry_mode: line_by_line
+code_mode: skip
+table_mode:
+  preserve_numbers: true
+  preserve_abbreviations: true
+
+segmentation:
+  max_chars_per_segment: 1200
+  max_chars_per_batch: 12000
+  max_segments_per_batch: 40
+  sentence_split_fallback: true
+
+context:
+  use_prev_segment: true
+  prev_segment_chars: 300
+  use_term_hints: true
+
+llm:
+  temperature: 0.0
+  max_retries: 5
+  retry_backoff_seconds: [1, 2, 4, 8, 16]
+  timeout_seconds: 120
+
+qa:
+  warn_ratio_limit: 0.005
+  warn_min_cap: 20

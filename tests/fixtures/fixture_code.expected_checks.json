@@ -1,0 +1,12 @@
+{
+  "must_keep_ids": [
+    "s1",
+    "pre1",
+    "code1",
+    "p1"
+  ],
+  "must_keep_hrefs": [
+    "ch1.xhtml#s1"
+  ],
+  "quote_translation_nodes": 0
+}

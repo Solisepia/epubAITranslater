@@ -1,0 +1,15 @@
+{
+  "must_keep_ids": [
+    "s1",
+    "p1",
+    "nref1",
+    "fn1",
+    "fnp1"
+  ],
+  "must_keep_hrefs": [
+    "#fn1",
+    "#nref1",
+    "ch1.xhtml#s1"
+  ],
+  "quote_translation_nodes": 0
+}

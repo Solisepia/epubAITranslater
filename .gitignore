@@ -1,0 +1,27 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# Virtualenv
+.venv/
+venv/
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Runtime/cache
+*.sqlite
+*.db
+
+# Test outputs
+tests/out/
+
+# OS
+.DS_Store
+Thumbs.db

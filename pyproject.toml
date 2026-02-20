@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "epub2zh-faithful"
+version = "0.1.0"
+description = "EPUB to Simplified Chinese faithful literal translator"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "epub2zh-faithful"}]
+dependencies = [
+  "lxml>=5.2.0",
+  "PyYAML>=6.0.1",
+  "requests>=2.32.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2.0"]
+build = ["pyinstaller>=6.0.0"]
+
+[project.scripts]
+translate-epub = "epub2zh_faithful.cli:main"
+translate-epub-ui = "epub2zh_faithful.gui:main"
+generate-termbase = "epub2zh_faithful.termbase_cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

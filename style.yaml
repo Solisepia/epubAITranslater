@@ -1,0 +1,6 @@
+﻿style_name: faithful_literal
+rules:
+  - 直译忠实，不增删信息
+  - 保留占位符原样
+  - 强制术语优先
+  - 中文标点统一

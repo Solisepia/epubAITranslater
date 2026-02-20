@@ -1,0 +1,18 @@
+{
+  "must_keep_ids": [
+    "s1",
+    "bq1",
+    "bq2",
+    "bq3",
+    "q1",
+    "q2",
+    "q3",
+    "c1",
+    "c2",
+    "c3"
+  ],
+  "must_keep_hrefs": [
+    "ch1.xhtml#s1"
+  ],
+  "quote_translation_nodes": 9
+}
