@@ -93,6 +93,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows_client.ps1
 可直接从 GitHub Releases 下载已经打好的安装包（含运行环境）：
 
 - 最新版本：`https://github.com/Solisepia/epubAITranslater/releases/latest`
+- 当前版本：`https://github.com/Solisepia/epubAITranslater/releases/tag/v0.1.0`
 - 安装包文件名：`epub2zh-faithful-client-setup.exe`
 
 ## 配置模板
