@@ -120,14 +120,14 @@ def main() -> None:
                 """
 <section id='s1'>
   <h1 id='h1'>Chapter One</h1>
-  <p id='p1'>Norman Conquest happened in 1066.</p>
+  <p id='p1'><span id='sp1'>Norman Conquest</span> happened in 1066.</p>
   <ul><li id='li1'>First item</li><li id='li2'>Second item</li></ul>
 </section>
 """,
             )
         ],
         {
-            "must_keep_ids": ["s1", "h1", "p1", "li1", "li2"],
+            "must_keep_ids": ["s1", "h1", "p1", "sp1", "li1", "li2"],
             "must_keep_hrefs": ["ch1.xhtml#s1"],
             "quote_translation_nodes": 0,
         },
@@ -176,7 +176,7 @@ def main() -> None:
         {
             "must_keep_ids": ["s1", "bq1", "bq2", "bq3", "q1", "q2", "q3", "c1", "c2", "c3"],
             "must_keep_hrefs": ["ch1.xhtml#s1"],
-            "quote_translation_nodes": 9,
+            "quote_translation_nodes": 0,
         },
     )
 

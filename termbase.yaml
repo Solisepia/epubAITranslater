@@ -1,20 +1,17 @@
 version: 1
-generated_at: '2026-02-20T03:47:25.011320+00:00'
-source_epub: Secret of the Emerald Tablet From Die Alchemie by Dr. Gottlieb Latz (Dennis
-  William Hauck) (z-library.sk, 1lib.sk, z-lib.sk).epub
+generated_at: '2026-02-20T16:34:35.491843+00:00'
+source_epub: ロード・エルメロイII世の事件簿 1 「case.剥離城アドラ」 (三田 誠,TYPE-MOON,坂本 みねぢ) (z-library.sk,
+  1lib.sk, z-lib.sk).epub
 settings:
   min_freq: 2
   max_terms: 300
   include_single_word: false
   merge_existing: true
+  fill_empty_targets: true
+  fill_provider: deepseek
+  fill_model: deepseek-chat
+  fill_batch_size: 40
 terms:
-- source: Norman Conquest
-  target: 诺曼征服
-  force: true
-  note: 历史术语固定译法
-- source: William the Conqueror
-  target: 征服者威廉
-  force: true
 - source: Emerald Tablet
   target: ''
   force: false
@@ -48,159 +45,159 @@ terms:
   force: false
   note: auto-generated; freq=16
 - source: Above and the Below
-  target: ''
+  target: 上方与下方（Above and the Below）
   force: false
   note: auto-generated; freq=15
 - source: Red Mercury
-  target: ''
+  target: 红汞（Red Mercury）
   force: false
   note: auto-generated; freq=15
 - source: Red Pulvis Solaris
-  target: ''
+  target: 红太阳尘（Red Pulvis Solaris）
   force: false
   note: auto-generated; freq=11
 - source: Separate the Earth
-  target: ''
+  target: 分离地球（Separate the Earth）
   force: false
   note: auto-generated; freq=11
 - source: First Revision
-  target: ''
+  target: 第一次修订（First Revision）
   force: false
   note: auto-generated; freq=11
 - source: Second Revision
-  target: ''
+  target: 第二次修订（Second Revision）
   force: false
   note: auto-generated; freq=9
 - source: One Soul
-  target: ''
+  target: 一个灵魂（One Soul）
   force: false
   note: auto-generated; freq=8
 - source: Fire the Subtle
-  target: ''
+  target: 点燃微妙（Fire the Subtle）
   force: false
   note: auto-generated; freq=7
 - source: Idea of One Mind
-  target: ''
+  target: 一心之念（Idea of One Mind）
   force: false
   note: auto-generated; freq=6
 - source: Third Revision
-  target: ''
+  target: 第三次修订（Third Revision）
   force: false
   note: auto-generated; freq=6
 - source: Sulfuric Acid
-  target: ''
+  target: 硫酸（Sulfuric Acid）
   force: false
   note: auto-generated; freq=6
 - source: Liquor Hepatis and Pulvis Solaris
-  target: ''
+  target: 肝液与太阳粉（Liquor Hepatis and Pulvis Solaris）
   force: false
   note: auto-generated; freq=4
 - source: Pulvis Solaris and Liquor Hepatis
-  target: ''
+  target: 太阳粉与肝液（Pulvis Solaris and Liquor Hepatis）
   force: false
   note: auto-generated; freq=4
 - source: Light of the Three Principles
-  target: ''
+  target: 三原则之光（Light of the Three Principles）
   force: false
   note: auto-generated; freq=4
 - source: Tabula Hermetica
-  target: ''
+  target: 赫尔墨斯之板（Tabula Hermetica）
   force: false
   note: auto-generated; freq=4
 - source: Green Vitriol
-  target: ''
+  target: 绿矾（Green Vitriol）
   force: false
   note: auto-generated; freq=4
 - source: Metaphysical Interpretation
-  target: ''
+  target: 形而上学解释（Metaphysical Interpretation）
   force: false
   note: auto-generated; freq=3
 - source: Complete Idiot’s Guide
-  target: ''
+  target: 完全白痴指南（Complete Idiot’s Guide）
   force: false
   note: auto-generated; freq=3
 - source: Hauck Dennis William
-  target: ''
+  target: 豪克·丹尼斯·威廉（Hauck Dennis William）
   force: false
   note: auto-generated; freq=3
 - source: Hermes Trismegistus
-  target: ''
+  target: 赫尔墨斯·特里斯墨吉斯忒斯（Hermes Trismegistus）
   force: false
   note: auto-generated; freq=3
 - source: Above and the Belo
-  target: ''
+  target: 上方与下方（Above and the Belo）
   force: false
   note: auto-generated; freq=3
 - source: Alexandrian Greeks
-  target: ''
+  target: 亚历山大希腊人（Alexandrian Greeks）
   force: false
   note: auto-generated; freq=3
 - source: Mercury and Sulfur
-  target: ''
+  target: 水银与硫磺（Mercury and Sulfur）
   force: false
   note: auto-generated; freq=3
 - source: Moment Point Press
-  target: ''
+  target: 时刻点出版社（Moment Point Press）
   force: false
   note: auto-generated; freq=3
 - source: Acid of Saltpeter
-  target: ''
+  target: 硝石酸（Acid of Saltpeter）
   force: false
   note: auto-generated; freq=3
 - source: Tabula Smaragdina
-  target: ''
+  target: 绿宝石板（Tabula Smaragdina）
   force: false
   note: auto-generated; freq=3
 - source: Water and Earth
-  target: ''
+  target: 水与土（Water and Earth）
   force: false
   note: auto-generated; freq=3
 - source: Fire and Earth
-  target: ''
+  target: 火与土（Fire and Earth）
   force: false
   note: auto-generated; freq=3
 - source: Gloria Rubric
-  target: ''
+  target: 荣耀红字（Gloria Rubric）
   force: false
   note: auto-generated; freq=3
 - source: Water and Air
-  target: ''
+  target: 水与气（Water and Air）
   force: false
   note: auto-generated; freq=3
 - source: Die Alchemie
-  target: ''
+  target: 炼金术（Die Alchemie）
   force: false
   note: auto-generated; freq=3
 - source: One Arcanum
-  target: ''
+  target: 一个奥秘（One Arcanum）
   force: false
   note: auto-generated; freq=3
 - source: Fire Soul
-  target: ''
+  target: 火魂（Fire Soul）
   force: false
   note: auto-generated; freq=3
 - source: Air Soul
-  target: ''
+  target: 空气魂（Air Soul）
   force: false
   note: auto-generated; freq=3
 - source: One Mind
-  target: ''
+  target: 一心（One Mind）
   force: false
   note: auto-generated; freq=3
 - source: New Alchemy of Science and Spirit
-  target: ''
+  target: 科学与精神的新炼金术（New Alchemy of Science and Spirit）
   force: false
   note: auto-generated; freq=2
 - source: Principle of the Four Elements
-  target: ''
+  target: 四元素原理（Principle of the Four Elements）
   force: false
   note: auto-generated; freq=2
 - source: Red Mercury of Transformation
-  target: ''
+  target: 转化的红汞（Red Mercury of Transformation）
   force: false
   note: auto-generated; freq=2
 - source: Solaris and Liquor Hepatis
-  target: ''
+  target: Solaris 与 Liquor Hepatis（Solaris and Liquor Hepatis）
   force: false
   note: auto-generated; freq=2
 - source: Tabula de Operatione Solis
@@ -208,130 +205,134 @@ terms:
   force: false
   note: auto-generated; freq=2
 - source: First Book of Moses Ch
-  target: ''
+  target: 摩西书第一章（First Book of Moses Ch）
   force: false
   note: auto-generated; freq=2
 - source: Black Pulvis Solaris
-  target: ''
+  target: 黑太阳粉（Black Pulvis Solaris）
   force: false
   note: auto-generated; freq=2
 - source: Dennis William Hauck
-  target: ''
+  target: 丹尼斯·威廉·豪克（Dennis William Hauck）
   force: false
   note: auto-generated; freq=2
 - source: Alexander the Great
-  target: ''
+  target: 亚历山大大帝（Alexander the Great）
   force: false
   note: auto-generated; freq=2
 - source: Philosophers' Stone
-  target: ''
+  target: 哲人石（Philosophers' Stone）
   force: false
   note: auto-generated; freq=2
 - source: Sulfur and Mercury
-  target: ''
+  target: 硫磺与汞（Sulfur and Mercury）
   force: false
   note: auto-generated; freq=2
 - source: Gross the Subtle
-  target: ''
+  target: 粗与细（Gross the Subtle）
   force: false
   note: auto-generated; freq=2
 - source: Plato's Writings
-  target: ''
+  target: 柏拉图的著作（Plato's Writings）
   force: false
   note: auto-generated; freq=2
 - source: Basil Valentine
-  target: ''
+  target: 巴兹尔·瓦伦丁（Basil Valentine）
   force: false
   note: auto-generated; freq=2
 - source: Crossing Press
-  target: ''
+  target: 交叉出版社（Crossing Press）
   force: false
   note: auto-generated; freq=2
 - source: Fire and Water
-  target: ''
+  target: 火与水（Fire and Water）
   force: false
   note: auto-generated; freq=2
 - source: For the Greeks
-  target: ''
+  target: 对于希腊人（For the Greeks）
   force: false
   note: auto-generated; freq=2
 - source: Indian Alchemy
-  target: ''
+  target: 印度炼金术（Indian Alchemy）
   force: false
   note: auto-generated; freq=2
 - source: Jewish Alchemy
-  target: ''
+  target: 犹太炼金术（Jewish Alchemy）
   force: false
   note: auto-generated; freq=2
 - source: Oil of Vitriol
-  target: ''
+  target: 硫酸油（Oil of Vitriol）
   force: false
   note: auto-generated; freq=2
 - source: Pulver Solaris
-  target: ''
+  target: 太阳粉（Pulver Solaris）
   force: false
   note: auto-generated; freq=2
 - source: Wolf Fred Alan
-  target: ''
+  target: 沃尔夫·弗雷德·艾伦（Wolf Fred Alan）
   force: false
   note: auto-generated; freq=2
 - source: Air and Earth
-  target: ''
+  target: 空气与土（Air and Earth）
   force: false
   note: auto-generated; freq=2
 - source: Air and Water
-  target: ''
+  target: 空气与水（Air and Water）
   force: false
   note: auto-generated; freq=2
 - source: Creation Myth
-  target: ''
+  target: 创世神话（Creation Myth）
   force: false
   note: auto-generated; freq=2
 - source: Four Elements
-  target: ''
+  target: 四元素（Four Elements）
   force: false
   note: auto-generated; freq=2
 - source: Greek Alchemy
-  target: ''
+  target: 希腊炼金术（Greek Alchemy）
   force: false
   note: auto-generated; freq=2
 - source: In the Jewish
-  target: ''
+  target: 在犹太（In the Jewish）
   force: false
   note: auto-generated; freq=2
 - source: Materia Prima
-  target: ''
+  target: 原初物质（Materia Prima）
   force: false
   note: auto-generated; freq=2
 - source: Old Testament
-  target: ''
+  target: 旧约（Old Testament）
   force: false
   note: auto-generated; freq=2
 - source: Samuel Weiser
-  target: ''
+  target: 塞缪尔·韦瑟（Samuel Weiser）
   force: false
   note: auto-generated; freq=2
 - source: Fire Arcanum
-  target: ''
+  target: 火奥秘（Fire Arcanum）
   force: false
   note: auto-generated; freq=2
 - source: Fire and Air
-  target: ''
+  target: 火与空气（Fire and Air）
   force: false
   note: auto-generated; freq=2
 - source: Great Secret
-  target: ''
+  target: 大秘密（Great Secret）
   force: false
   note: auto-generated; freq=2
 - source: Seven Arcana
-  target: ''
+  target: 七奥秘（Seven Arcana）
   force: false
   note: auto-generated; freq=2
 - source: Moring Gary
-  target: ''
+  target: 莫林·加里（Moring Gary）
   force: false
   note: auto-generated; freq=2
 - source: Earth Soul
-  target: ''
+  target: 土魂（Earth Soul）
   force: false
   note: auto-generated; freq=2
+- source: TYPE-MOON
+  target: ''
+  force: false
+  note: auto-generated; freq=5

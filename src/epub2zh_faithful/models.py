@@ -11,8 +11,6 @@ class SegmentType(str, Enum):
     HEADING = "heading"
     PARAGRAPH = "paragraph"
     LIST_ITEM = "list_item"
-    BLOCKQUOTE_ORIGINAL = "blockquote_original"
-    BLOCKQUOTE_TRANSLATION = "blockquote_translation"
     FOOTNOTE = "footnote"
     POETRY_LINE = "poetry_line"
     TABLE_CELL = "table_cell"
@@ -73,8 +71,6 @@ class NodeTask:
     order_index: int
     source_lang: str = "en"
     target_lang: str = "zh-Hans"
-    quote_origin: str | None = None
-    quote_prefix: str | None = None
     poetry_line_count: int | None = None
 
 

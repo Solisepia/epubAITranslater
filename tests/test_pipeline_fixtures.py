@@ -105,6 +105,14 @@ def _collect_code_texts(epub_path: Path) -> tuple[list[str], list[str]]:
     return pre_texts, code_texts
 
 
+def _text_by_id(epub_path: Path, wanted_id: str) -> str | None:
+    for _, tree in _read_xhtml_from_epub(epub_path):
+        nodes = tree.xpath(f"//*[@id='{wanted_id}']")
+        if nodes and isinstance(nodes[0], etree._Element):
+            return "".join(nodes[0].itertext())
+    return None
+
+
 def test_fixture_translation_end_to_end() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -153,56 +161,16 @@ def test_code_fixture_preserves_code_blocks() -> None:
     assert in_code == out_code
 
 
-def test_quote_mode_translation_only(tmp_path: Path) -> None:
+def test_inline_span_text_gets_translated() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    input_epub = FIX / "fixture_quotes.epub"
-    output_epub = OUT / "fixture_quotes.translation_only.epub"
-    cache_db = OUT / "fixture_quotes.translation_only.sqlite"
-    config_path = tmp_path / "config.translation_only.yaml"
+    input_epub = FIX / "fixture_basic.epub"
+    output_epub = OUT / "fixture_basic.inline_check.epub"
+    cache_db = OUT / "fixture_basic.inline_check.sqlite"
 
-    config_path.write_text(
-        (
-            "target_lang: zh-Hans\n"
-            "style: faithful_literal\n"
-            "translate_toc: true\n"
-            "translate_titles: true\n"
-            "quote_mode:\n"
-            "  preserve_original: false\n"
-            "  add_translation: false\n"
-            "  translation_node_class: ai-quote-translation\n"
-            "latin_mode:\n"
-            "  translate_normally: true\n"
-            "poetry_mode: line_by_line\n"
-            "code_mode: skip\n"
-            "table_mode:\n"
-            "  preserve_numbers: true\n"
-            "  preserve_abbreviations: true\n"
-            "segmentation:\n"
-            "  max_chars_per_segment: 1200\n"
-            "  max_chars_per_batch: 12000\n"
-            "  max_segments_per_batch: 40\n"
-            "  sentence_split_fallback: true\n"
-            "context:\n"
-            "  use_prev_segment: true\n"
-            "  prev_segment_chars: 300\n"
-            "  use_term_hints: true\n"
-            "llm:\n"
-            "  temperature: 0.0\n"
-            "  max_retries: 5\n"
-            "  retry_backoff_seconds: [1, 2, 4, 8, 16]\n"
-            "  timeout_seconds: 120\n"
-            "qa:\n"
-            "  warn_ratio_limit: 0.005\n"
-            "  warn_min_cap: 20\n"
-        ),
-        encoding="utf-8",
-    )
+    run = _run_cli(input_epub, output_epub, cache_db, resume=False)
+    assert run.returncode == 0, f"inline fixture run failed: {run.stdout}\n{run.stderr}"
 
-    result = _run_cli(input_epub, output_epub, cache_db, resume=False, config_path=config_path)
-    assert result.returncode == 0, f"translation-only quote mode failed: {result.stdout}\n{result.stderr}"
-
-    ids, hrefs, quote_count = _collect_ids_hrefs(output_epub)
-    assert "bq1" in ids
-    assert "q1" in ids
-    assert "c1" in ids
-    assert quote_count == 0
+    src = _text_by_id(input_epub, "sp1")
+    dst = _text_by_id(output_epub, "sp1")
+    assert src is not None and dst is not None
+    assert dst != src

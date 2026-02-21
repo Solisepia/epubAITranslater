@@ -9,13 +9,6 @@ import yaml
 
 
 @dataclass(slots=True)
-class QuoteMode:
-    preserve_original: bool = True
-    add_translation: bool = True
-    translation_node_class: str = "ai-quote-translation"
-
-
-@dataclass(slots=True)
 class LatinMode:
     translate_normally: bool = True
 
@@ -61,7 +54,6 @@ class AppConfig:
     style: str = "faithful_literal"
     translate_toc: bool = True
     translate_titles: bool = True
-    quote_mode: QuoteMode = field(default_factory=QuoteMode)
     latin_mode: LatinMode = field(default_factory=LatinMode)
     poetry_mode: str = "line_by_line"
     code_mode: str = "skip"

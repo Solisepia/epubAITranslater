@@ -63,7 +63,14 @@ def set_inner_xml(node: etree._Element, inner_xml: str) -> None:
         node.remove(child)
     node.text = None
 
-    wrapped = etree.fromstring(f"<root>{inner_xml}</root>")
+    try:
+        wrapped = etree.fromstring(f"<root>{inner_xml}</root>")
+    except etree.XMLSyntaxError:
+        # Model output may contain plain-text '&' or other unescaped chars.
+        # In that case treat the whole value as text instead of XML fragment.
+        node.text = inner_xml
+        return
+
     node.text = wrapped.text
     for child in list(wrapped):
         wrapped.remove(child)

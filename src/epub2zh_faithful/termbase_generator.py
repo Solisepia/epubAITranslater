@@ -9,8 +9,12 @@ from typing import Callable
 
 import yaml
 
+from .config import AppConfig
 from .dom_utils import parse_xml_file
 from .epub_parser import cleanup_workspace, unpack_epub
+from .llm_client import LLMClientFactory, ProviderSettings
+from .models import Segment, SegmentType
+from .terminology import format_term_target, has_cjk_left
 from .utils import has_any_class, localname
 
 ProgressCallback = Callable[[str], None]
@@ -60,9 +64,19 @@ class GenerateOptions:
     max_terms: int = 300
     include_single_word: bool = False
     merge_existing: bool = True
+    fill_empty_targets: bool = False
+    fill_provider: str = "openai"
+    fill_model: str = "gpt-5-mini"
+    fill_batch_size: int = 40
 
 
-def generate_termbase(input_epub: str, output_path: str, options: GenerateOptions, progress_cb: ProgressCallback | None = None) -> dict[str, int]:
+def generate_termbase(
+    input_epub: str,
+    output_path: str,
+    options: GenerateOptions,
+    progress_cb: ProgressCallback | None = None,
+    llm_config: AppConfig | None = None,
+) -> dict[str, int]:
     _emit(progress_cb, "Unpacking EPUB for term extraction...")
     book = unpack_epub(input_epub)
 
@@ -117,20 +131,41 @@ def generate_termbase(input_epub: str, output_path: str, options: GenerateOption
                 "max_terms": options.max_terms,
                 "include_single_word": options.include_single_word,
                 "merge_existing": options.merge_existing,
+                "fill_empty_targets": options.fill_empty_targets,
+                "fill_provider": options.fill_provider,
+                "fill_model": options.fill_model,
+                "fill_batch_size": options.fill_batch_size,
             },
             "terms": existing_terms + generated_terms,
         }
 
+        filled_targets = 0
+        rejected_non_cjk_targets = 0
+        if options.fill_empty_targets:
+            fill_cfg = llm_config or AppConfig()
+            filled_targets, rejected_non_cjk_targets = _fill_empty_targets_with_ai(payload["terms"], options, fill_cfg, progress_cb)
+        cleared_non_cjk_targets = _normalize_term_targets(payload["terms"])
+
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         Path(output_path).write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
-        _emit(progress_cb, f"Generated terms: {len(generated_terms)} (total in file: {len(payload['terms'])})")
+        _emit(
+            progress_cb,
+            (
+                f"Generated terms: {len(generated_terms)} (total in file: {len(payload['terms'])}, "
+                f"filled targets: {filled_targets}, rejected no-cjk: {rejected_non_cjk_targets}, "
+                f"cleared no-cjk: {cleared_non_cjk_targets})"
+            ),
+        )
 
         return {
             "scanned_text_nodes": total_text_nodes,
             "candidate_terms": len(filtered),
             "generated_terms": len(generated_terms),
             "total_terms_in_file": len(payload["terms"]),
+            "filled_targets": filled_targets,
+            "rejected_non_cjk_targets": rejected_non_cjk_targets,
+            "cleared_non_cjk_targets": cleared_non_cjk_targets,
         }
     finally:
         cleanup_workspace(book.workspace_dir, keep=False)
@@ -241,6 +276,98 @@ def _load_existing_terms(output_path: str) -> list[dict[str, object]]:
     if isinstance(terms, list):
         return [item for item in terms if isinstance(item, dict) and item.get("source")]
     return []
+
+
+def _fill_empty_targets_with_ai(
+    terms: list[dict[str, object]],
+    options: GenerateOptions,
+    config: AppConfig,
+    progress_cb: ProgressCallback | None,
+) -> tuple[int, int]:
+    empty_terms = [item for item in terms if str(item.get("source", "")).strip() and not str(item.get("target", "")).strip()]
+    if not empty_terms:
+        return 0, 0
+
+    provider_name = options.fill_provider
+    if provider_name not in {"openai", "deepseek", "mock"}:
+        raise ValueError(f"Unsupported fill provider: {provider_name}")
+
+    _emit(
+        progress_cb,
+        f"Auto-filling empty term targets with AI: {len(empty_terms)} terms ({provider_name}/{options.fill_model})",
+    )
+
+    provider = LLMClientFactory.build(
+        ProviderSettings(
+            provider=provider_name,
+            draft_provider=provider_name,
+            revise_provider="none",
+            model=options.fill_model,
+            draft_model=None,
+            revise_model=None,
+        ),
+        config,
+    )
+
+    filled = 0
+    rejected_non_cjk = 0
+    batch_size = max(1, int(options.fill_batch_size))
+    total_batches = (len(empty_terms) + batch_size - 1) // batch_size
+
+    for batch_idx, start in enumerate(range(0, len(empty_terms), batch_size), start=1):
+        batch_terms = empty_terms[start : start + batch_size]
+        segments = [_term_to_segment(start + i + 1, item, config.target_lang) for i, item in enumerate(batch_terms)]
+        results = provider.translate_segments(segments, termbase_hits=[])
+        result_map = {item.id: item.translated_text.strip() for item in results}
+
+        for seg, term in zip(segments, batch_terms):
+            translated = result_map.get(seg.id, "").strip()
+            if translated:
+                source = str(term.get("source", "")).strip()
+                formatted = format_term_target(source, translated)
+                if has_cjk_left(source, formatted):
+                    term["target"] = formatted
+                    filled += 1
+                else:
+                    rejected_non_cjk += 1
+                    term["target"] = ""
+
+        _emit(progress_cb, f"Term fill batch completed: {batch_idx}/{total_batches}")
+
+    return filled, rejected_non_cjk
+
+
+def _term_to_segment(index: int, term: dict[str, object], target_lang: str) -> Segment:
+    term_source = str(term.get("source", "")).strip()
+    seg_id = f"TERM_{index:06d}"
+    return Segment(
+        id=seg_id,
+        node_task_id=seg_id,
+        chunk_index=0,
+        segment_type=SegmentType.PARAGRAPH,
+        file_path="termbase",
+        node_selector=term_source,
+        order_index=index,
+        source_lang="en",
+        target_lang=target_lang,
+        source_text=term_source,
+    )
+
+
+def _normalize_term_targets(terms: list[dict[str, object]]) -> int:
+    cleared = 0
+    for item in terms:
+        source = str(item.get("source", "")).strip()
+        target = str(item.get("target", "")).strip()
+        if not source or not target:
+            continue
+        formatted = format_term_target(source, target)
+        if has_cjk_left(source, formatted):
+            item["target"] = formatted
+        else:
+            item["target"] = ""
+            cleared += 1
+    return cleared
 
 
 def _emit(progress_cb: ProgressCallback | None, message: str) -> None:

@@ -2,6 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import re
 import traceback
 from dataclasses import asdict
 from datetime import datetime
@@ -15,6 +16,7 @@ from .llm_client import LLMClientFactory, ProviderError, ProviderSettings
 from .models import NodeTask, RunStats, Segment
 from .post_editor import post_edit
 from .qa_checker import capture_integrity_snapshot, qa_passes_gate, run_qa, write_qa_reports
+from .placeholder_codec import PLACEHOLDER_TOKEN_RE, placeholder_counts
 from .segmenter import build_segments, group_segments_for_batches, merge_segment_translations
 from .terminology import Termbase
 from .tm_store import TMStore
@@ -98,7 +100,7 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None) -
         stats.total_segments = len(segments)
         _emit(progress_cb, f"Built segments: {len(segments)}")
 
-        config_hash = _build_config_hash(config, termbase.version_id, provider_settings)
+        config_hash = _build_config_hash(config, termbase.cache_fingerprint(), provider_settings)
         store.create_run(run_id, getattr(args, "input"), getattr(args, "output"), provider_settings.provider, config_hash)
 
         prefer_revise = provider_settings.revise_provider != "none"
@@ -115,10 +117,27 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None) -
             config=config,
             progress_cb=progress_cb,
         )
+        _repair_problematic_segments(
+            segments=segments,
+            segment_translations=segment_translations,
+            provider=provider,
+            store=store,
+            termbase=termbase,
+            config_hash=config_hash,
+            max_concurrency=max(1, int(getattr(args, "max_concurrency", 4))),
+            stats=stats,
+            progress_cb=progress_cb,
+        )
         _emit(
             progress_cb,
             f"Translation complete: translated={stats.translated_segments}, cached={stats.cached_segments}, llm_calls={stats.llm_calls}",
         )
+        unchanged_segments = sum(
+            1
+            for seg in segments
+            if (segment_translations.get(seg.id, "").strip() == seg.source_text.strip())
+        )
+        _emit(progress_cb, f"Unchanged segments: {unchanged_segments}/{len(segments)}")
 
         node_translations = merge_segment_translations(segments, segment_translations)
 
@@ -127,7 +146,6 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None) -
             workdir=book.workspace_dir,
             node_tasks=xhtml_tasks,
             node_translations=node_translations,
-            quote_class=config.quote_mode.translation_node_class,
         )
 
         toc_translation_map = {task.id: node_translations.get(task.id, "") for task in toc_tasks}
@@ -197,10 +215,10 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None) -
             cleanup_workspace(book.workspace_dir, workdir_keep)
 
 
-def _build_config_hash(config: AppConfig, termbase_version: str, provider_settings: ProviderSettings) -> str:
+def _build_config_hash(config: AppConfig, termbase_fingerprint: str, provider_settings: ProviderSettings) -> str:
     payload = {
         "config": config.to_normalized_json(),
-        "termbase_version": termbase_version,
+        "termbase_fingerprint": termbase_fingerprint,
         "provider": asdict(provider_settings),
     }
     return sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
@@ -221,17 +239,25 @@ def _translate_with_cache(
 ) -> dict[str, str]:
     out: dict[str, str] = {}
     pending: list[Segment] = []
+    suspicious_cache = 0
 
     for seg in segments:
         source_hash = sha256_text(seg.source_text)
         store.record_segment(seg.id, seg.file_path, seg.node_selector, seg.order_index, source_hash)
         cached = store.get_cached(seg.id, source_hash, config_hash, prefer_revise=prefer_revise) if resume else None
         if resume and cached is not None:
-            out[seg.id] = cached
-            stats.cached_segments += 1
+            if _needs_forced_retry(seg.source_text, cached):
+                pending.append(seg)
+                suspicious_cache += 1
+            else:
+                out[seg.id] = cached
+                stats.cached_segments += 1
         else:
             pending.append(seg)
-    _emit(progress_cb, f"Cache scan done: hit={stats.cached_segments}, pending={len(pending)}")
+    _emit(
+        progress_cb,
+        f"Cache scan done: hit={stats.cached_segments}, pending={len(pending)}, skipped_suspicious={suspicious_cache}",
+    )
 
     batches = group_segments_for_batches(
         pending,
@@ -300,6 +326,43 @@ def _run_provider_batch(
     revise = provider.revise_segments(batch, draft, term_hits)
     draft_map = {item.id: item.translated_text for item in draft}
     revise_map = {item.id: item.translated_text for item in revise}
+    for seg in batch:
+        revise_map[seg.id] = _select_preferred_candidate(
+            seg.source_text,
+            revise_map.get(seg.id, ""),
+            draft_map.get(seg.id, ""),
+        )
+    retry_targets = [
+        seg
+        for seg in batch
+        if (
+            _needs_forced_retry(seg.source_text, revise_map.get(seg.id, ""))
+            or _has_placeholder_mismatch(seg.source_text, revise_map.get(seg.id, ""))
+        )
+    ]
+    for _ in range(2):
+        if not retry_targets:
+            break
+        retry_draft = post_edit(provider.translate_segments(retry_targets, term_hits))
+        retry_revise = provider.revise_segments(retry_targets, retry_draft, term_hits)
+        retry_draft_map = {item.id: item.translated_text for item in retry_draft}
+        retry_revise_map = {item.id: item.translated_text for item in retry_revise}
+        next_retry_targets: list[Segment] = []
+        for seg in retry_targets:
+            candidate = _select_preferred_candidate(
+                seg.source_text,
+                retry_revise_map.get(seg.id, ""),
+                retry_draft_map.get(seg.id, ""),
+            )
+            if not candidate.strip():
+                next_retry_targets.append(seg)
+                continue
+            if not _needs_forced_retry(seg.source_text, candidate) and not _has_placeholder_mismatch(seg.source_text, candidate):
+                draft_map[seg.id] = retry_draft_map.get(seg.id, draft_map.get(seg.id, ""))
+                revise_map[seg.id] = candidate
+            else:
+                next_retry_targets.append(seg)
+        retry_targets = next_retry_targets
     return draft_map, revise_map
 
 
@@ -311,6 +374,132 @@ def _emit(progress_cb: ProgressCallback | None, message: str) -> None:
     except Exception:
         # Progress reporting must never break translation pipeline.
         return
+
+
+LATIN_LETTER_RE = re.compile(r"[A-Za-z]")
+JAPANESE_KANA_RE = re.compile(r"[ぁ-ゟ゠-ヿｦ-ﾟー]")
+
+
+def _needs_forced_retry(source_text: str, translated_text: str) -> bool:
+    source = source_text.strip()
+    translated = translated_text.strip()
+    if not source or source != translated:
+        return False
+    probe = PLACEHOLDER_TOKEN_RE.sub("", source).strip()
+    if not probe:
+        return False
+    if JAPANESE_KANA_RE.search(probe):
+        return True
+    if len(probe) < 40:
+        return False
+    return len(LATIN_LETTER_RE.findall(probe)) >= 20
+
+
+def _has_placeholder_mismatch(source_text: str, translated_text: str) -> bool:
+    return placeholder_counts(source_text) != placeholder_counts(translated_text)
+
+
+def _repair_missing_placeholders(source_text: str, translated_text: str) -> str:
+    src_counts = placeholder_counts(source_text)
+    dst_counts = placeholder_counts(translated_text)
+    if src_counts == dst_counts:
+        return translated_text
+
+    missing_tokens: list[str] = []
+    for token, count in src_counts.items():
+        diff = count - dst_counts.get(token, 0)
+        if diff > 0:
+            missing_tokens.extend([token] * diff)
+    if not missing_tokens:
+        return translated_text
+
+    base = translated_text.strip()
+    suffix = "".join(missing_tokens)
+    if not base:
+        return suffix
+    return f"{base} {suffix}"
+
+
+def _select_preferred_candidate(source_text: str, revise_text: str, draft_text: str) -> str:
+    revise = revise_text or ""
+    draft = draft_text or ""
+
+    if revise and not _has_placeholder_mismatch(source_text, revise):
+        return revise
+    if draft and not _has_placeholder_mismatch(source_text, draft):
+        return draft
+    return _repair_missing_placeholders(source_text, revise or draft)
+
+
+def _needs_problem_repair(seg: Segment, translated_text: str) -> bool:
+    if not translated_text.strip():
+        return True
+    if _has_placeholder_mismatch(seg.source_text, translated_text):
+        return True
+    if _needs_forced_retry(seg.source_text, translated_text):
+        return True
+    return False
+
+
+def _repair_problematic_segments(
+    segments: list[Segment],
+    segment_translations: dict[str, str],
+    provider: object,
+    store: TMStore,
+    termbase: Termbase,
+    config_hash: str,
+    max_concurrency: int,
+    stats: RunStats,
+    progress_cb: ProgressCallback | None = None,
+) -> None:
+    pending = [seg for seg in segments if _needs_problem_repair(seg, segment_translations.get(seg.id, ""))]
+    if not pending:
+        return
+
+    _emit(progress_cb, f"Repair pass: targeted segments={len(pending)}")
+
+    single_batches = [[seg] for seg in pending]
+    batch_outputs: dict[int, tuple[list[Segment], dict[str, str], dict[str, str]]] = {}
+    if max_concurrency > 1 and len(single_batches) > 1:
+        with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+            future_to_idx = {
+                executor.submit(_run_provider_batch, provider, batch, _collect_batch_term_hits(batch, termbase)): idx
+                for idx, batch in enumerate(single_batches)
+            }
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                draft_map, revise_map = future.result()
+                batch_outputs[idx] = (single_batches[idx], draft_map, revise_map)
+    else:
+        for idx, batch in enumerate(single_batches):
+            draft_map, revise_map = _run_provider_batch(provider, batch, _collect_batch_term_hits(batch, termbase))
+            batch_outputs[idx] = (batch, draft_map, revise_map)
+
+    still_bad = 0
+    for idx in sorted(batch_outputs.keys()):
+        batch, draft_map, revise_map = batch_outputs[idx]
+        seg = batch[0]
+        out_text = _select_preferred_candidate(
+            seg.source_text,
+            revise_map.get(seg.id, ""),
+            draft_map.get(seg.id, ""),
+        )
+        segment_translations[seg.id] = out_text
+        source_hash = sha256_text(seg.source_text)
+        store.upsert_translation(
+            segment_id=seg.id,
+            source_hash=source_hash,
+            config_hash=config_hash,
+            provider=provider.__class__.__name__,
+            draft_text=draft_map.get(seg.id),
+            revise_text=out_text,
+        )
+        if _needs_problem_repair(seg, out_text):
+            still_bad += 1
+        stats.llm_calls += 1
+
+    store.commit()
+    _emit(progress_cb, f"Repair pass complete: unresolved={still_bad}")
 
 
 def _write_failure_artifacts(qa_report_path: Path, qa_summary_path: Path, message: str, stage: str) -> None:

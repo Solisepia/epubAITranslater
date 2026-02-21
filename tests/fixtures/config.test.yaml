@@ -4,11 +4,6 @@ style: faithful_literal
 translate_toc: true
 translate_titles: true
 
-quote_mode:
-  preserve_original: true
-  add_translation: true
-  translation_node_class: ai-quote-translation
-
 latin_mode:
   translate_normally: true
 

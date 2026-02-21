@@ -124,40 +124,36 @@ class ConfigEditorDialog:
         self._add_bool(outer, 2, "translate_toc", self.config.translate_toc)
         self._add_bool(outer, 3, "translate_titles", self.config.translate_titles)
 
-        self._add_bool(outer, 4, "quote_mode.preserve_original", self.config.quote_mode.preserve_original)
-        self._add_bool(outer, 5, "quote_mode.add_translation", self.config.quote_mode.add_translation)
-        self._add_str(outer, 6, "quote_mode.translation_node_class", self.config.quote_mode.translation_node_class)
+        self._add_bool(outer, 4, "latin_mode.translate_normally", self.config.latin_mode.translate_normally)
 
-        self._add_bool(outer, 7, "latin_mode.translate_normally", self.config.latin_mode.translate_normally)
+        self._add_str(outer, 5, "poetry_mode", self.config.poetry_mode)
+        self._add_str(outer, 6, "code_mode", self.config.code_mode)
+        self._add_bool(outer, 7, "table_mode.preserve_numbers", self.config.table_mode.preserve_numbers)
+        self._add_bool(outer, 8, "table_mode.preserve_abbreviations", self.config.table_mode.preserve_abbreviations)
 
-        self._add_str(outer, 8, "poetry_mode", self.config.poetry_mode)
-        self._add_str(outer, 9, "code_mode", self.config.code_mode)
-        self._add_bool(outer, 10, "table_mode.preserve_numbers", self.config.table_mode.preserve_numbers)
-        self._add_bool(outer, 11, "table_mode.preserve_abbreviations", self.config.table_mode.preserve_abbreviations)
+        self._add_int(outer, 9, "segmentation.max_chars_per_segment", self.config.segmentation.max_chars_per_segment)
+        self._add_int(outer, 10, "segmentation.max_chars_per_batch", self.config.segmentation.max_chars_per_batch)
+        self._add_int(outer, 11, "segmentation.max_segments_per_batch", self.config.segmentation.max_segments_per_batch)
+        self._add_bool(outer, 12, "segmentation.sentence_split_fallback", self.config.segmentation.sentence_split_fallback)
 
-        self._add_int(outer, 12, "segmentation.max_chars_per_segment", self.config.segmentation.max_chars_per_segment)
-        self._add_int(outer, 13, "segmentation.max_chars_per_batch", self.config.segmentation.max_chars_per_batch)
-        self._add_int(outer, 14, "segmentation.max_segments_per_batch", self.config.segmentation.max_segments_per_batch)
-        self._add_bool(outer, 15, "segmentation.sentence_split_fallback", self.config.segmentation.sentence_split_fallback)
+        self._add_bool(outer, 13, "context.use_prev_segment", self.config.context.use_prev_segment)
+        self._add_int(outer, 14, "context.prev_segment_chars", self.config.context.prev_segment_chars)
+        self._add_bool(outer, 15, "context.use_term_hints", self.config.context.use_term_hints)
 
-        self._add_bool(outer, 16, "context.use_prev_segment", self.config.context.use_prev_segment)
-        self._add_int(outer, 17, "context.prev_segment_chars", self.config.context.prev_segment_chars)
-        self._add_bool(outer, 18, "context.use_term_hints", self.config.context.use_term_hints)
+        self._add_float(outer, 16, "llm.temperature", self.config.llm.temperature)
+        self._add_int(outer, 17, "llm.max_retries", self.config.llm.max_retries)
+        self._add_str(outer, 18, "llm.retry_backoff_seconds", ",".join(str(x) for x in self.config.llm.retry_backoff_seconds))
+        self._add_int(outer, 19, "llm.timeout_seconds", self.config.llm.timeout_seconds)
 
-        self._add_float(outer, 19, "llm.temperature", self.config.llm.temperature)
-        self._add_int(outer, 20, "llm.max_retries", self.config.llm.max_retries)
-        self._add_str(outer, 21, "llm.retry_backoff_seconds", ",".join(str(x) for x in self.config.llm.retry_backoff_seconds))
-        self._add_int(outer, 22, "llm.timeout_seconds", self.config.llm.timeout_seconds)
+        self._add_float(outer, 20, "qa.warn_ratio_limit", self.config.qa.warn_ratio_limit)
+        self._add_int(outer, 21, "qa.warn_min_cap", self.config.qa.warn_min_cap)
 
-        self._add_float(outer, 23, "qa.warn_ratio_limit", self.config.qa.warn_ratio_limit)
-        self._add_int(outer, 24, "qa.warn_min_cap", self.config.qa.warn_min_cap)
-
-        for i in range(25):
+        for i in range(22):
             outer.rowconfigure(i, weight=0)
         outer.columnconfigure(1, weight=1)
 
         actions = ttk.Frame(outer)
-        actions.grid(row=25, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        actions.grid(row=22, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(actions, text="Save", command=self._save).pack(side=tk.LEFT)
         ttk.Button(actions, text="Cancel", command=self.win.destroy).pack(side=tk.LEFT, padx=(8, 0))
 
@@ -186,10 +182,6 @@ class ConfigEditorDialog:
             cfg.style = self._get_str("style")
             cfg.translate_toc = self._get_bool("translate_toc")
             cfg.translate_titles = self._get_bool("translate_titles")
-
-            cfg.quote_mode.preserve_original = self._get_bool("quote_mode.preserve_original")
-            cfg.quote_mode.add_translation = self._get_bool("quote_mode.add_translation")
-            cfg.quote_mode.translation_node_class = self._get_str("quote_mode.translation_node_class")
 
             cfg.latin_mode.translate_normally = self._get_bool("latin_mode.translate_normally")
             cfg.poetry_mode = self._get_str("poetry_mode")
@@ -259,7 +251,7 @@ class TranslatorUI:
         self.output_path = tk.StringVar()
         self.provider = tk.StringVar(value="openai")
         self.draft_provider = tk.StringVar(value="openai")
-        self.revise_provider = tk.StringVar(value="openai")
+        self.revise_provider = tk.StringVar(value="none")
         self.model = tk.StringVar(value="gpt-5-mini")
         self.draft_model = tk.StringVar()
         self.revise_model = tk.StringVar()
@@ -269,7 +261,7 @@ class TranslatorUI:
         self.max_concurrency = tk.StringVar(value="4")
         self.openai_key = tk.StringVar()
         self.deepseek_key = tk.StringVar()
-        self.resume = tk.BooleanVar(value=True)
+        self.resume = tk.BooleanVar(value=False)
         self.keep_workdir = tk.BooleanVar(value=False)
         self.status_text = tk.StringVar(value="idle")
 
@@ -405,15 +397,15 @@ class TranslatorUI:
         current = self.provider.get()
         if current == "openai":
             self.draft_provider.set("openai")
-            self.revise_provider.set("openai")
+            self.revise_provider.set("none")
         elif current == "deepseek":
             self.draft_provider.set("deepseek")
-            self.revise_provider.set("deepseek")
+            self.revise_provider.set("none")
         elif current == "mixed":
             if self.draft_provider.get() not in {"openai", "deepseek", "mock"}:
                 self.draft_provider.set("openai")
             if self.revise_provider.get() not in {"openai", "deepseek", "none", "mock"}:
-                self.revise_provider.set("deepseek")
+                self.revise_provider.set("none")
 
     def _open_config_editor(self) -> None:
         path = self.config_path.get().strip() or str(DEFAULT_CONFIG_PATH)
@@ -467,6 +459,19 @@ class TranslatorUI:
             messagebox.showerror("Error", "Termbase path is missing")
             return
 
+        if self.openai_key.get().strip():
+            os.environ["OPENAI_API_KEY"] = self.openai_key.get().strip()
+        if self.deepseek_key.get().strip():
+            os.environ["DEEPSEEK_API_KEY"] = self.deepseek_key.get().strip()
+
+        fill_provider = self.provider.get().strip()
+        if fill_provider == "mixed":
+            fill_provider = self.draft_provider.get().strip() or "openai"
+        if fill_provider not in {"openai", "deepseek", "mock"}:
+            fill_provider = "openai"
+        fill_model = self.model.get().strip() or "gpt-5-mini"
+        config_path = self.config_path.get().strip() or None
+
         self.is_running = True
         self.run_btn.configure(state="disabled")
         self.generate_btn.configure(state="disabled")
@@ -477,7 +482,7 @@ class TranslatorUI:
 
         worker = threading.Thread(
             target=self._run_generate_worker,
-            args=(input_epub, output_termbase),
+            args=(input_epub, output_termbase, fill_provider, fill_model, config_path),
             daemon=True,
         )
         worker.start()
@@ -530,13 +535,31 @@ class TranslatorUI:
         code = run_translation(args, progress_cb=self._enqueue_progress)
         self.root.after(0, lambda: self._finish_translation(code))
 
-    def _run_generate_worker(self, input_epub: str, output_termbase: str) -> None:
+    def _run_generate_worker(
+        self,
+        input_epub: str,
+        output_termbase: str,
+        fill_provider: str,
+        fill_model: str,
+        config_path: str | None,
+    ) -> None:
         try:
+            cfg = load_config(config_path)
             stats = generate_termbase(
                 input_epub=input_epub,
                 output_path=output_termbase,
-                options=GenerateOptions(min_freq=2, max_terms=300, include_single_word=False, merge_existing=True),
+                options=GenerateOptions(
+                    min_freq=2,
+                    max_terms=300,
+                    include_single_word=False,
+                    merge_existing=True,
+                    fill_empty_targets=True,
+                    fill_provider=fill_provider,
+                    fill_model=fill_model,
+                    fill_batch_size=40,
+                ),
                 progress_cb=self._enqueue_progress,
+                llm_config=cfg,
             )
             self.root.after(0, lambda: self._finish_generate(stats, output_termbase))
         except Exception as exc:  # noqa: BLE001
@@ -572,7 +595,10 @@ class TranslatorUI:
         self._log(
             "Termbase generated: "
             f"scanned={stats['scanned_text_nodes']} candidates={stats['candidate_terms']} "
-            f"added={stats['generated_terms']} total={stats['total_terms_in_file']}"
+            f"added={stats['generated_terms']} filled={stats.get('filled_targets', 0)} "
+            f"rejected_no_cjk={stats.get('rejected_non_cjk_targets', 0)} "
+            f"cleared_no_cjk={stats.get('cleared_non_cjk_targets', 0)} "
+            f"total={stats['total_terms_in_file']}"
         )
         self._log(f"Termbase path: {Path(output_termbase).resolve()}")
         messagebox.showinfo("Done", f"Termbase generated:\n{output_termbase}")

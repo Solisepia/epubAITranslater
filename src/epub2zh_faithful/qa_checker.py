@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 from urllib.parse import urldefrag
 
 from lxml import etree
@@ -9,12 +10,14 @@ from lxml import etree
 from .config import AppConfig
 from .dom_utils import parse_xml_file
 from .models import BookModel, NodeTask, QAIssue, Segment, TocSnapshot
-from .placeholder_codec import placeholder_counts
+from .placeholder_codec import PLACEHOLDER_TOKEN_RE, placeholder_counts
 from .terminology import Termbase
 from .utils import dump_json, localname
 
 WATCH_ATTR_PREFIXES = ("aria-",)
 WATCH_ATTRS = {"id", "href", "src", "role", "epub:type"}
+LATIN_LETTER_RE = re.compile(r"[A-Za-z]")
+JAPANESE_KANA_RE = re.compile(r"[ぁ-ゟ゠-ヿｦ-ﾟー]")
 
 
 def capture_integrity_snapshot(workdir: str, files: list[str]) -> dict[str, list[str]]:
@@ -66,6 +69,9 @@ def run_qa(
                     {"source": src_counts, "translated": dst_counts},
                 )
             )
+        unchanged_issue = _unchanged_translation_issue(segment, translated)
+        if unchanged_issue is not None:
+            issues.append(unchanged_issue)
 
     for term in termbase.force_terms():
         for segment in segments:
@@ -176,6 +182,7 @@ def _check_links(workdir: str, files: list[str]) -> list[QAIssue]:
     link_refs: list[tuple[str, str]] = []
 
     for rel in files:
+        rel_norm = Path(rel).as_posix()
         tree = parse_xml_file(str(root / rel))
         ids: set[str] = set()
         for elem in tree.getroot().iter():
@@ -186,8 +193,8 @@ def _check_links(workdir: str, files: list[str]) -> list[QAIssue]:
                 ids.add(node_id)
             href = elem.get("href")
             if href:
-                link_refs.append((rel, href))
-        ids_map[rel] = ids
+                link_refs.append((rel_norm, href))
+        ids_map[rel_norm] = ids
 
     issues: list[QAIssue] = []
     for rel, href in link_refs:
@@ -267,3 +274,24 @@ def _watched_attrs(elem: etree._Element) -> dict[str, str]:
 
 def _attr_signature(tag: str, attrs: dict[str, str]) -> str:
     return f"{tag}|{json.dumps(attrs, ensure_ascii=False, sort_keys=True)}"
+
+
+def _unchanged_translation_issue(segment: Segment, translated: str) -> QAIssue | None:
+    source = segment.source_text.strip()
+    output = translated.strip()
+    if not source or source != output:
+        return None
+
+    probe = PLACEHOLDER_TOKEN_RE.sub("", source).strip()
+    if not probe:
+        return None
+
+    kana_count = len(JAPANESE_KANA_RE.findall(probe))
+    if kana_count >= 2:
+        return QAIssue(segment.id, "error", "same_as_source", "译文与原文完全一致（含日文假名）")
+
+    latin_count = len(LATIN_LETTER_RE.findall(probe))
+    if len(probe) >= 40 and latin_count >= 20:
+        return QAIssue(segment.id, "error", "same_as_source", "译文与原文完全一致（长拉丁文本）")
+
+    return None

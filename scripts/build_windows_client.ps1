@@ -1,4 +1,4 @@
-﻿param(
+param(
   [switch]$OneFile,
   [switch]$Clean
 )
@@ -7,11 +7,14 @@ $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $root
 
+$venvPython = Join-Path $root ".venv\Scripts\python.exe"
+$pythonExe = if (Test-Path $venvPython) { $venvPython } else { "python" }
+
 Write-Host "[1/4] Install project..."
-python -m pip install -e .
+& $pythonExe -m pip install -e .
 
 Write-Host "[2/4] Install PyInstaller..."
-python -m pip install pyinstaller
+& $pythonExe -m pip install pyinstaller
 
 $distName = "epub2zh-faithful-client"
 $args = @(
@@ -31,7 +34,7 @@ if ($OneFile) {
 }
 
 Write-Host "[3/4] Build client..."
-python @args
+& $pythonExe @args
 
 if (-not $OneFile) {
   Write-Host "[4/4] Copy docs/templates..."

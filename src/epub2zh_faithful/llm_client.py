@@ -195,8 +195,35 @@ class OpenAIProvider(BaseChatProvider):
 
 
 class DeepSeekProvider(BaseChatProvider):
+    MAX_SEGMENTS_PER_CALL = 8
+
     def __init__(self, api_key: str, model: str, config: AppConfig) -> None:
         super().__init__(api_key=api_key, model=model, config=config, base_url="https://api.deepseek.com/v1")
+
+    def translate_segments(self, segments: list[Segment], termbase_hits: list[dict[str, str | bool]]) -> list[TranslationResult]:
+        if len(segments) <= self.MAX_SEGMENTS_PER_CALL:
+            return super().translate_segments(segments, termbase_hits)
+
+        out: list[TranslationResult] = []
+        for chunk in _chunked(segments, self.MAX_SEGMENTS_PER_CALL):
+            out.extend(super().translate_segments(chunk, termbase_hits))
+        return out
+
+    def revise_segments(
+        self,
+        segments: list[Segment],
+        draft_results: list[TranslationResult],
+        termbase_hits: list[dict[str, str | bool]],
+    ) -> list[TranslationResult]:
+        if len(segments) <= self.MAX_SEGMENTS_PER_CALL:
+            return super().revise_segments(segments, draft_results, termbase_hits)
+
+        draft_map = {item.id: item for item in draft_results}
+        out: list[TranslationResult] = []
+        for chunk in _chunked(segments, self.MAX_SEGMENTS_PER_CALL):
+            chunk_drafts = [draft_map[s.id] for s in chunk if s.id in draft_map]
+            out.extend(super().revise_segments(chunk, chunk_drafts, termbase_hits))
+        return out
 
     def _call_once(self, payload: dict, expected_ids: list[str], strict_json: bool, error_feedback: str = "") -> list[TranslationResult]:
         system, user = _build_messages(payload, error_feedback)
@@ -234,6 +261,8 @@ def _build_messages(payload: dict, error_feedback: str) -> tuple[str, str]:
     system = (
         "你是直译忠实译者。仅输出 JSON，不要输出任何解释。"
         "不增译不漏译。占位符必须原样保留，数量一致，不可改动。"
+        "除占位符与术语括号中的原文外，输出必须是简体中文，不得整句照抄原文。"
+        "命中术语表时优先使用指定译法；若 target 含“译文（原文）”结构，必须完整保留该结构。"
         "命中术语表 force=true 时必须使用指定译法。"
     )
     if error_feedback:
@@ -320,3 +349,7 @@ def _load_json(text: str) -> dict:
 def _is_temperature_unsupported(response_text: str) -> bool:
     lower = response_text.lower()
     return "temperature" in lower and "unsupported" in lower
+
+
+def _chunked(items: list[Segment], size: int) -> list[list[Segment]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]

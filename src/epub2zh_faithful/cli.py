@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", default=None)
     parser.add_argument("--max-concurrency", type=int, default=4)
     parser.add_argument("--keep-workdir", action="store_true")
+    parser.add_argument("--verbose", action="store_true", help="print pipeline progress logs")
 
     return parser
 
@@ -31,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    code = run_translation(args)
+    code = run_translation(args, progress_cb=print if args.verbose else None)
     return code
 
 
