@@ -43,6 +43,31 @@ FIELD_HELP: dict[str, str] = {
     "Logs": "显示运行阶段、批次进度、错误和输出路径。",
 }
 
+CONFIG_FIELD_HELP: dict[str, str] = {
+    "target_lang": "目标语言代码。通常填 `zh-Hans`。修改后会影响提示词中的目标语言与输出语言预期。",
+    "style": "翻译风格标识。建议保持 `faithful_literal`。改动后会影响提示词风格约束。",
+    "translate_toc": "是否翻译目录（TOC）标题。勾选后目录文本会被翻译；取消则保留原文目录。",
+    "translate_titles": "是否翻译 HTML `title` 节点。勾选会翻译页面标题；取消可避免标题类误翻或误报。",
+    "latin_mode.translate_normally": "拉丁字母文本是否按普通文本翻译。勾选会正常翻译英文段；取消可更多保留原文。",
+    "poetry_mode": "诗歌处理模式。常用 `line_by_line`。逐行模式可更稳定保持诗行结构。",
+    "code_mode": "代码块处理模式。常用 `skip`。`skip` 会尽量跳过代码相关内容，避免破坏语法。",
+    "table_mode.preserve_numbers": "表格中是否强制保留数字。勾选可减少数字被改写的风险。",
+    "table_mode.preserve_abbreviations": "表格中是否保留缩写。勾选可减少术语缩写被误翻。",
+    "segmentation.max_chars_per_segment": "单段最大字符数。值越小分段越细、上下文更少；值越大单次段落更长。",
+    "segmentation.max_chars_per_batch": "单批最大字符数。值越大请求更少但每次负载更重，可能更易触发限流。",
+    "segmentation.max_segments_per_batch": "单批最多段数。适当调小可提升稳定性，调大可提升吞吐。",
+    "segmentation.sentence_split_fallback": "分段超长时是否按句子兜底切分。勾选通常更稳，减少硬切断句。",
+    "context.use_prev_segment": "是否给模型传入上一段上下文。勾选有助于衔接一致性。",
+    "context.prev_segment_chars": "上下文使用的上一段字符数。越大上下文越多，但提示词也更长。",
+    "context.use_term_hints": "是否把命中的术语提示传给模型。建议勾选以提升术语一致性。",
+    "llm.temperature": "采样温度（常用 0.0）。越低越稳定可复现，越高越发散。",
+    "llm.max_retries": "同一请求最大重试次数。增大可提高成功率，但失败时总耗时更长。",
+    "llm.retry_backoff_seconds": "重试等待秒数列表，逗号分隔（如 `1,2,4,8`）。用于控制每次重试间隔。",
+    "llm.timeout_seconds": "单次请求超时秒数。网络慢或模型响应慢时可适当调大。",
+    "qa.warn_ratio_limit": "QA 警告占比阈值（0~1）。越小越严格，越大越宽松。",
+    "qa.warn_min_cap": "QA 警告最小上限（整数）。与比例阈值共同决定是否通过 QA gate。",
+}
+
 
 class HoverTooltip:
     def __init__(self, widget: tk.Widget, text: str, delay_ms: int = 450) -> None:
@@ -113,6 +138,7 @@ class ConfigEditorDialog:
         self.win.grab_set()
 
         self.vars: dict[str, tk.Variable] = {}
+        self._tooltips: list[HoverTooltip] = []
         self._build()
 
     def _build(self) -> None:
@@ -160,8 +186,11 @@ class ConfigEditorDialog:
     def _add_str(self, parent: ttk.Frame, row: int, key: str, value: str) -> None:
         var = tk.StringVar(value=str(value))
         self.vars[key] = var
-        ttk.Label(parent, text=key).grid(row=row, column=0, sticky="w", pady=2)
-        ttk.Entry(parent, textvariable=var).grid(row=row, column=1, sticky="ew", pady=2)
+        label = ttk.Label(parent, text=key)
+        label.grid(row=row, column=0, sticky="w", pady=2)
+        entry = ttk.Entry(parent, textvariable=var)
+        entry.grid(row=row, column=1, sticky="ew", pady=2)
+        self._attach_config_help(key, label, entry)
 
     def _add_int(self, parent: ttk.Frame, row: int, key: str, value: int) -> None:
         self._add_str(parent, row, key, str(int(value)))
@@ -172,8 +201,18 @@ class ConfigEditorDialog:
     def _add_bool(self, parent: ttk.Frame, row: int, key: str, value: bool) -> None:
         var = tk.BooleanVar(value=bool(value))
         self.vars[key] = var
-        ttk.Label(parent, text=key).grid(row=row, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(parent, variable=var).grid(row=row, column=1, sticky="w", pady=2)
+        label = ttk.Label(parent, text=key)
+        label.grid(row=row, column=0, sticky="w", pady=2)
+        check = ttk.Checkbutton(parent, variable=var)
+        check.grid(row=row, column=1, sticky="w", pady=2)
+        self._attach_config_help(key, label, check)
+
+    def _attach_config_help(self, key: str, *widgets: tk.Widget) -> None:
+        tip = CONFIG_FIELD_HELP.get(key)
+        if not tip:
+            return
+        for widget in widgets:
+            self._tooltips.append(HoverTooltip(widget, tip))
 
     def _save(self) -> None:
         try:
