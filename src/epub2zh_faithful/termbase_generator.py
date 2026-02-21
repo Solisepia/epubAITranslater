@@ -9,7 +9,7 @@ from typing import Callable
 
 import yaml
 
-from .config import AppConfig
+from .config import FIXED_TARGET_LANG, AppConfig
 from .dom_utils import parse_xml_file
 from .epub_parser import cleanup_workspace, unpack_epub
 from .llm_client import LLMClientFactory, ProviderSettings
@@ -316,7 +316,7 @@ def _fill_empty_targets_with_ai(
 
     for batch_idx, start in enumerate(range(0, len(empty_terms), batch_size), start=1):
         batch_terms = empty_terms[start : start + batch_size]
-        segments = [_term_to_segment(start + i + 1, item, config.target_lang) for i, item in enumerate(batch_terms)]
+        segments = [_term_to_segment(start + i + 1, item) for i, item in enumerate(batch_terms)]
         results = provider.translate_segments(segments, termbase_hits=[])
         result_map = {item.id: item.translated_text.strip() for item in results}
 
@@ -337,7 +337,7 @@ def _fill_empty_targets_with_ai(
     return filled, rejected_non_cjk
 
 
-def _term_to_segment(index: int, term: dict[str, object], target_lang: str) -> Segment:
+def _term_to_segment(index: int, term: dict[str, object]) -> Segment:
     term_source = str(term.get("source", "")).strip()
     seg_id = f"TERM_{index:06d}"
     return Segment(
@@ -349,7 +349,7 @@ def _term_to_segment(index: int, term: dict[str, object], target_lang: str) -> S
         node_selector=term_source,
         order_index=index,
         source_lang="en",
-        target_lang=target_lang,
+        target_lang=FIXED_TARGET_LANG,
         source_text=term_source,
     )
 

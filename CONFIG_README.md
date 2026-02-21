@@ -1,88 +1,64 @@
-# Config README
+﻿# Config README
 
-本文档与当前代码实现同步，说明 `config.yaml` 中哪些字段会实际影响翻译，哪些字段仅为兼容保留。
+鏈枃妗ｄ笌褰撳墠浠ｇ爜瀹炵幇鍚屾锛岃鏄?`config.yaml` 涓摢浜涘瓧娈典細瀹為檯褰卞搷缈昏瘧锛屽摢浜涘瓧娈典粎涓哄吋瀹逛繚鐣欍€?
+## 1. 鍔犺浇瑙勫垯
 
-## 1. 加载规则
+- 鏀寔 `YAML` / `JSON`銆?- 浠呰鐩栦綘鏄惧紡濉啓鐨勫瓧娈碉紝鏈～鍐欎娇鐢ㄩ粯璁ゅ€笺€?- 鏈瘑鍒瓧娈典細琚拷鐣ワ紙涓嶄細鎶ラ敊锛夈€?- 寮€鍚?`--resume` 鏃讹紝宸插懡涓殑缂撳瓨娈佃惤涓嶄細閲嶇炕锛涢厤缃敼鍔ㄦ兂鍏ㄩ潰鐢熸晥璇峰叧闂?`resume` 鎴栨洿鎹?`cache.sqlite`銆?
+## 2. 榛樿閰嶇疆锛堝缓璁級
 
-- 支持 `YAML` / `JSON`。
-- 仅覆盖你显式填写的字段，未填写使用默认值。
-- 未识别字段会被忽略（不会报错）。
-- 开启 `--resume` 时，已命中的缓存段落不会重翻；配置改动想全面生效请关闭 `resume` 或更换 `cache.sqlite`。
-
-## 2. 默认配置（建议）
-
-当前项目默认模板最小化为：
+褰撳墠椤圭洰榛樿妯℃澘鏈€灏忓寲涓猴細
 
 ```yaml
-target_lang: zh-Hans
 style: faithful_literal
 translate_toc: true
 translate_titles: true
 ```
 
-其余项使用内置默认值（见下文 4.2）。
+鍏朵綑椤逛娇鐢ㄥ唴缃粯璁ゅ€硷紙瑙佷笅鏂?4.2锛夈€?
+## 3. UI 涓彲缂栬緫涓斿疄闄呯敓鏁堢殑瀛楁
 
-## 3. UI 中可编辑且实际生效的字段
 
-### 3.1 基础
-
-- `target_lang`
-  - 建议：`zh-Hans`
-  - 作用：目标语言标识（segment 元信息、术语生成场景等）
+- 目标语言固定为简体中文（zh-Hans），不再通过 config 配置。
 
 - `style`
-  - 作用：翻译/润色风格，会直接进入 LLM payload 的 `style_guide`
-  - 可选枚举：
-    - `faithful_literal`：忠实直译（默认，技术文档/术语敏感）
-    - `faithful_fluent`：忠实但更顺畅（通用阅读）
-    - `literary_cn`：偏书面文风（小说/散文）
-    - `concise_cn`：更简洁凝练（摘要/速读）
-  - 非法值会自动回退到 `faithful_literal`
+  - 浣滅敤锛氱炕璇?娑﹁壊椋庢牸锛屼細鐩存帴杩涘叆 LLM payload 鐨?`style_guide`
+  - 鍙€夋灇涓撅細
+    - `faithful_literal`锛氬繝瀹炵洿璇戯紙榛樿锛屾妧鏈枃妗?鏈鏁忔劅锛?    - `faithful_fluent`锛氬繝瀹炰絾鏇撮『鐣咃紙閫氱敤闃呰锛?    - `literary_cn`锛氬亸涔﹂潰鏂囬锛堝皬璇?鏁ｆ枃锛?    - `concise_cn`锛氭洿绠€娲佸嚌缁冿紙鎽樿/閫熻锛?  - 闈炴硶鍊间細鑷姩鍥為€€鍒?`faithful_literal`
 
-### 3.2 内容范围
+### 3.2 鍐呭鑼冨洿
 
-- `translate_toc`：是否翻译目录文本
-- `translate_titles`：是否翻译 HTML `title` 节点
+- `translate_toc`锛氭槸鍚︾炕璇戠洰褰曟枃鏈?- `translate_titles`锛氭槸鍚︾炕璇?HTML `title` 鑺傜偣
 
-### 3.3 分段
+### 3.3 鍒嗘
 
-- `segmentation.max_chars_per_segment`：单段最大字符数
-- `segmentation.max_chars_per_batch`：单批字符上限
-- `segmentation.max_segments_per_batch`：单批段数上限
-
-### 3.4 上下文
-
-- `context.prev_segment_chars`：前文截断长度
-
-### 3.5 LLM 调用
+- `segmentation.max_chars_per_segment`锛氬崟娈垫渶澶у瓧绗︽暟
+- `segmentation.max_chars_per_batch`锛氬崟鎵瑰瓧绗︿笂闄?- `segmentation.max_segments_per_batch`锛氬崟鎵规鏁颁笂闄?
+### 3.4 涓婁笅鏂?
+- `context.prev_segment_chars`锛氬墠鏂囨埅鏂暱搴?
+### 3.5 LLM 璋冪敤
 
 - `llm.temperature`
 - `llm.max_retries`
 - `llm.retry_backoff_seconds`
 - `llm.timeout_seconds`
 
-### 3.6 QA 门槛
+### 3.6 QA 闂ㄦ
 
 - `qa.warn_ratio_limit`
 - `qa.warn_min_cap`
 
-验收规则：
-
+楠屾敹瑙勫垯锛?
 `warn_cap = max(int(total_segments * warn_ratio_limit), warn_min_cap)`  
-仅当 `error_count == 0` 且 `warn_count <= warn_cap` 才通过 gate。
+浠呭綋 `error_count == 0` 涓?`warn_count <= warn_cap` 鎵嶉€氳繃 gate銆?
+## 4. 鍏煎瀛楁璇存槑
 
-## 4. 兼容字段说明
-
-### 4.1 已删除字段（旧配置里会被忽略）
-
+### 4.1 宸插垹闄ゅ瓧娈碉紙鏃ч厤缃噷浼氳蹇界暐锛?
 - `quote_mode.*`
 - `poetry_mode`
 - `code_mode`
 
-### 4.2 目前保留在配置模型中，但 UI 已隐藏（当前版本不驱动主流程）
-
-这些字段仍有默认值并可写入配置，但当前逻辑不按它们分支：
-
+### 4.2 鐩墠淇濈暀鍦ㄩ厤缃ā鍨嬩腑锛屼絾 UI 宸查殣钘忥紙褰撳墠鐗堟湰涓嶉┍鍔ㄤ富娴佺▼锛?
+杩欎簺瀛楁浠嶆湁榛樿鍊煎苟鍙啓鍏ラ厤缃紝浣嗗綋鍓嶉€昏緫涓嶆寜瀹冧滑鍒嗘敮锛?
 - `latin_mode.translate_normally`
 - `table_mode.preserve_numbers`
 - `table_mode.preserve_abbreviations`
@@ -90,9 +66,9 @@ translate_titles: true
 - `context.use_prev_segment`
 - `context.use_term_hints`
 
-## 5. 常用调参模板
+## 5. 甯哥敤璋冨弬妯℃澘
 
-### 5.1 稳定优先
+### 5.1 绋冲畾浼樺厛
 
 ```yaml
 segmentation:
@@ -105,19 +81,14 @@ llm:
   timeout_seconds: 180
 ```
 
-### 5.2 速度优先（网络稳定时）
-
+### 5.2 閫熷害浼樺厛锛堢綉缁滅ǔ瀹氭椂锛?
 ```yaml
 segmentation:
   max_chars_per_batch: 15000
   max_segments_per_batch: 60
 ```
 
-并配合提高 `max_concurrency`（视 provider 限流而定）。
+骞堕厤鍚堟彁楂?`max_concurrency`锛堣 provider 闄愭祦鑰屽畾锛夈€?
+## 6. 甯歌闂
 
-## 6. 常见问题
-
-- 改了配置但结果没变化：
-  - 先检查是否开启了 `resume` 命中缓存。
-- 可以写额外字段吗：
-  - 可以写，但未识别字段会被忽略。
+- 鏀逛簡閰嶇疆浣嗙粨鏋滄病鍙樺寲锛?  - 鍏堟鏌ユ槸鍚﹀紑鍚簡 `resume` 鍛戒腑缂撳瓨銆?- 鍙互鍐欓澶栧瓧娈靛悧锛?  - 鍙互鍐欙紝浣嗘湭璇嗗埆瀛楁浼氳蹇界暐銆?

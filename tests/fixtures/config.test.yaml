@@ -1,5 +1,4 @@
-﻿target_lang: zh-Hans
-style: faithful_literal
+﻿style: faithful_literal
 
 translate_toc: true
 translate_titles: true
@@ -31,3 +30,4 @@ llm:
 qa:
   warn_ratio_limit: 0.005
   warn_min_cap: 20
+

@@ -14,6 +14,7 @@ STYLE_OPTIONS = (
     "concise_cn",
 )
 DEFAULT_STYLE = "faithful_literal"
+FIXED_TARGET_LANG = "zh-Hans"
 
 
 @dataclass(slots=True)
@@ -58,7 +59,6 @@ class QAConfig:
 
 @dataclass(slots=True)
 class AppConfig:
-    target_lang: str = "zh-Hans"
     style: str = DEFAULT_STYLE
     translate_toc: bool = True
     translate_titles: bool = True

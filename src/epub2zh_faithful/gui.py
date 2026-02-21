@@ -44,7 +44,6 @@ FIELD_HELP: dict[str, str] = {
 }
 
 CONFIG_FIELD_HELP: dict[str, str] = {
-    "target_lang": "目标语言代码。通常填 `zh-Hans`。修改后会影响提示词中的目标语言与输出语言预期。",
     "style": "翻译风格枚举。可选：`faithful_literal`、`faithful_fluent`、`literary_cn`、`concise_cn`。会直接影响 LLM 的翻译与润色风格提示词。",
     "translate_toc": "是否翻译目录（TOC）标题。勾选后目录文本会被翻译；取消则保留原文目录。",
     "translate_titles": "是否翻译 HTML `title` 节点。勾选会翻译页面标题；取消可避免标题类误翻或误报。",
@@ -139,47 +138,56 @@ class ConfigEditorDialog:
 
         self.win = tk.Toplevel(parent)
         self.win.title("Edit Config")
-        self.win.geometry("760x740")
         self.win.transient(parent)
         self.win.grab_set()
 
         self.vars: dict[str, tk.Variable] = {}
         self._tooltips: list[HoverTooltip] = []
         self._build()
+        self._fit_window_to_content()
 
     def _build(self) -> None:
         outer = ttk.Frame(self.win, padding=10)
         outer.pack(fill=tk.BOTH, expand=True)
 
-        self._add_str(outer, 0, "target_lang", self.config.target_lang)
-        self._add_enum(outer, 1, "style", self.config.style, list(STYLE_OPTIONS))
-        self._add_hint(outer, 2, STYLE_SCENARIO_HINT)
+        self._add_enum(outer, 0, "style", self.config.style, list(STYLE_OPTIONS))
+        self._add_hint(outer, 1, STYLE_SCENARIO_HINT)
 
-        self._add_bool(outer, 3, "translate_toc", self.config.translate_toc)
-        self._add_bool(outer, 4, "translate_titles", self.config.translate_titles)
+        self._add_bool(outer, 2, "translate_toc", self.config.translate_toc)
+        self._add_bool(outer, 3, "translate_titles", self.config.translate_titles)
 
-        self._add_int(outer, 5, "segmentation.max_chars_per_segment", self.config.segmentation.max_chars_per_segment)
-        self._add_int(outer, 6, "segmentation.max_chars_per_batch", self.config.segmentation.max_chars_per_batch)
-        self._add_int(outer, 7, "segmentation.max_segments_per_batch", self.config.segmentation.max_segments_per_batch)
+        self._add_int(outer, 4, "segmentation.max_chars_per_segment", self.config.segmentation.max_chars_per_segment)
+        self._add_int(outer, 5, "segmentation.max_chars_per_batch", self.config.segmentation.max_chars_per_batch)
+        self._add_int(outer, 6, "segmentation.max_segments_per_batch", self.config.segmentation.max_segments_per_batch)
 
-        self._add_int(outer, 8, "context.prev_segment_chars", self.config.context.prev_segment_chars)
+        self._add_int(outer, 7, "context.prev_segment_chars", self.config.context.prev_segment_chars)
 
-        self._add_float(outer, 9, "llm.temperature", self.config.llm.temperature)
-        self._add_int(outer, 10, "llm.max_retries", self.config.llm.max_retries)
-        self._add_str(outer, 11, "llm.retry_backoff_seconds", ",".join(str(x) for x in self.config.llm.retry_backoff_seconds))
-        self._add_int(outer, 12, "llm.timeout_seconds", self.config.llm.timeout_seconds)
+        self._add_float(outer, 8, "llm.temperature", self.config.llm.temperature)
+        self._add_int(outer, 9, "llm.max_retries", self.config.llm.max_retries)
+        self._add_str(outer, 10, "llm.retry_backoff_seconds", ",".join(str(x) for x in self.config.llm.retry_backoff_seconds))
+        self._add_int(outer, 11, "llm.timeout_seconds", self.config.llm.timeout_seconds)
 
-        self._add_float(outer, 13, "qa.warn_ratio_limit", self.config.qa.warn_ratio_limit)
-        self._add_int(outer, 14, "qa.warn_min_cap", self.config.qa.warn_min_cap)
+        self._add_float(outer, 12, "qa.warn_ratio_limit", self.config.qa.warn_ratio_limit)
+        self._add_int(outer, 13, "qa.warn_min_cap", self.config.qa.warn_min_cap)
 
-        for i in range(15):
+        for i in range(14):
             outer.rowconfigure(i, weight=0)
         outer.columnconfigure(1, weight=1)
 
         actions = ttk.Frame(outer)
-        actions.grid(row=15, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        actions.grid(row=14, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(actions, text="Save", command=self._save).pack(side=tk.LEFT)
         ttk.Button(actions, text="Cancel", command=self.win.destroy).pack(side=tk.LEFT, padx=(8, 0))
+
+    def _fit_window_to_content(self) -> None:
+        self.win.update_idletasks()
+        req_w = self.win.winfo_reqwidth()
+        req_h = self.win.winfo_reqheight()
+        screen_w = self.win.winfo_screenwidth()
+        screen_h = self.win.winfo_screenheight()
+        width = min(req_w + 20, screen_w - 80)
+        height = min(req_h + 20, screen_h - 100)
+        self.win.geometry(f"{width}x{height}")
 
     def _add_str(self, parent: ttk.Frame, row: int, key: str, value: str) -> None:
         var = tk.StringVar(value=str(value))
@@ -234,7 +242,6 @@ class ConfigEditorDialog:
     def _save(self) -> None:
         try:
             cfg = AppConfig()
-            cfg.target_lang = self._get_str("target_lang")
             cfg.style = normalize_style(self._get_str("style"))
             cfg.translate_toc = self._get_bool("translate_toc")
             cfg.translate_titles = self._get_bool("translate_titles")

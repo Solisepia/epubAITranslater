@@ -2,7 +2,7 @@
 
 import re
 
-from .config import AppConfig
+from .config import FIXED_TARGET_LANG, AppConfig
 from .models import NodeTask, Segment
 from .placeholder_codec import PLACEHOLDER_TOKEN_RE, split_text_preserving_placeholders
 
@@ -28,7 +28,7 @@ def build_segments(node_tasks: list[NodeTask], config: AppConfig) -> list[Segmen
                 node_selector=task.node_selector,
                 order_index=task.order_index,
                 source_lang="en",
-                target_lang=config.target_lang,
+                target_lang=FIXED_TARGET_LANG,
                 source_text=chunk,
                 placeholders=placeholders,
                 context_prev_source=prev_source,
