@@ -14,7 +14,7 @@ from typing import Callable
 
 import yaml
 
-from .config import AppConfig, load_config
+from .config import STYLE_OPTIONS, AppConfig, load_config, normalize_style
 from .pipeline import run_translation
 from .termbase_generator import GenerateOptions, generate_termbase
 
@@ -45,12 +45,10 @@ FIELD_HELP: dict[str, str] = {
 
 CONFIG_FIELD_HELP: dict[str, str] = {
     "target_lang": "目标语言代码。通常填 `zh-Hans`。修改后会影响提示词中的目标语言与输出语言预期。",
-    "style": "翻译风格标识。建议保持 `faithful_literal`。改动后会影响提示词风格约束。",
+    "style": "翻译风格枚举。可选：`faithful_literal`、`faithful_fluent`、`literary_cn`、`concise_cn`。会直接影响 LLM 的翻译与润色风格提示词。",
     "translate_toc": "是否翻译目录（TOC）标题。勾选后目录文本会被翻译；取消则保留原文目录。",
     "translate_titles": "是否翻译 HTML `title` 节点。勾选会翻译页面标题；取消可避免标题类误翻或误报。",
     "latin_mode.translate_normally": "拉丁字母文本是否按普通文本翻译。勾选会正常翻译英文段；取消可更多保留原文。",
-    "poetry_mode": "诗歌处理模式。常用 `line_by_line`。逐行模式可更稳定保持诗行结构。",
-    "code_mode": "代码块处理模式。常用 `skip`。`skip` 会尽量跳过代码相关内容，避免破坏语法。",
     "table_mode.preserve_numbers": "表格中是否强制保留数字。勾选可减少数字被改写的风险。",
     "table_mode.preserve_abbreviations": "表格中是否保留缩写。勾选可减少术语缩写被误翻。",
     "segmentation.max_chars_per_segment": "单段最大字符数。值越小分段越细、上下文更少；值越大单次段落更长。",
@@ -67,6 +65,14 @@ CONFIG_FIELD_HELP: dict[str, str] = {
     "qa.warn_ratio_limit": "QA 警告占比阈值（0~1）。越小越严格，越大越宽松。",
     "qa.warn_min_cap": "QA 警告最小上限（整数）。与比例阈值共同决定是否通过 QA gate。",
 }
+
+STYLE_SCENARIO_HINT = (
+    "推荐场景: "
+    "faithful_literal=技术文档/术语敏感; "
+    "faithful_fluent=通用阅读; "
+    "literary_cn=小说/散文; "
+    "concise_cn=摘要/速读。"
+)
 
 
 class HoverTooltip:
@@ -146,40 +152,32 @@ class ConfigEditorDialog:
         outer.pack(fill=tk.BOTH, expand=True)
 
         self._add_str(outer, 0, "target_lang", self.config.target_lang)
-        self._add_str(outer, 1, "style", self.config.style)
-        self._add_bool(outer, 2, "translate_toc", self.config.translate_toc)
-        self._add_bool(outer, 3, "translate_titles", self.config.translate_titles)
+        self._add_enum(outer, 1, "style", self.config.style, list(STYLE_OPTIONS))
+        self._add_hint(outer, 2, STYLE_SCENARIO_HINT)
 
-        self._add_bool(outer, 4, "latin_mode.translate_normally", self.config.latin_mode.translate_normally)
+        self._add_bool(outer, 3, "translate_toc", self.config.translate_toc)
+        self._add_bool(outer, 4, "translate_titles", self.config.translate_titles)
 
-        self._add_str(outer, 5, "poetry_mode", self.config.poetry_mode)
-        self._add_str(outer, 6, "code_mode", self.config.code_mode)
-        self._add_bool(outer, 7, "table_mode.preserve_numbers", self.config.table_mode.preserve_numbers)
-        self._add_bool(outer, 8, "table_mode.preserve_abbreviations", self.config.table_mode.preserve_abbreviations)
+        self._add_int(outer, 5, "segmentation.max_chars_per_segment", self.config.segmentation.max_chars_per_segment)
+        self._add_int(outer, 6, "segmentation.max_chars_per_batch", self.config.segmentation.max_chars_per_batch)
+        self._add_int(outer, 7, "segmentation.max_segments_per_batch", self.config.segmentation.max_segments_per_batch)
 
-        self._add_int(outer, 9, "segmentation.max_chars_per_segment", self.config.segmentation.max_chars_per_segment)
-        self._add_int(outer, 10, "segmentation.max_chars_per_batch", self.config.segmentation.max_chars_per_batch)
-        self._add_int(outer, 11, "segmentation.max_segments_per_batch", self.config.segmentation.max_segments_per_batch)
-        self._add_bool(outer, 12, "segmentation.sentence_split_fallback", self.config.segmentation.sentence_split_fallback)
+        self._add_int(outer, 8, "context.prev_segment_chars", self.config.context.prev_segment_chars)
 
-        self._add_bool(outer, 13, "context.use_prev_segment", self.config.context.use_prev_segment)
-        self._add_int(outer, 14, "context.prev_segment_chars", self.config.context.prev_segment_chars)
-        self._add_bool(outer, 15, "context.use_term_hints", self.config.context.use_term_hints)
+        self._add_float(outer, 9, "llm.temperature", self.config.llm.temperature)
+        self._add_int(outer, 10, "llm.max_retries", self.config.llm.max_retries)
+        self._add_str(outer, 11, "llm.retry_backoff_seconds", ",".join(str(x) for x in self.config.llm.retry_backoff_seconds))
+        self._add_int(outer, 12, "llm.timeout_seconds", self.config.llm.timeout_seconds)
 
-        self._add_float(outer, 16, "llm.temperature", self.config.llm.temperature)
-        self._add_int(outer, 17, "llm.max_retries", self.config.llm.max_retries)
-        self._add_str(outer, 18, "llm.retry_backoff_seconds", ",".join(str(x) for x in self.config.llm.retry_backoff_seconds))
-        self._add_int(outer, 19, "llm.timeout_seconds", self.config.llm.timeout_seconds)
+        self._add_float(outer, 13, "qa.warn_ratio_limit", self.config.qa.warn_ratio_limit)
+        self._add_int(outer, 14, "qa.warn_min_cap", self.config.qa.warn_min_cap)
 
-        self._add_float(outer, 20, "qa.warn_ratio_limit", self.config.qa.warn_ratio_limit)
-        self._add_int(outer, 21, "qa.warn_min_cap", self.config.qa.warn_min_cap)
-
-        for i in range(22):
+        for i in range(15):
             outer.rowconfigure(i, weight=0)
         outer.columnconfigure(1, weight=1)
 
         actions = ttk.Frame(outer)
-        actions.grid(row=22, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        actions.grid(row=15, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(actions, text="Save", command=self._save).pack(side=tk.LEFT)
         ttk.Button(actions, text="Cancel", command=self.win.destroy).pack(side=tk.LEFT, padx=(8, 0))
 
@@ -191,6 +189,25 @@ class ConfigEditorDialog:
         entry = ttk.Entry(parent, textvariable=var)
         entry.grid(row=row, column=1, sticky="ew", pady=2)
         self._attach_config_help(key, label, entry)
+
+    def _add_enum(self, parent: ttk.Frame, row: int, key: str, value: str, options: list[str]) -> None:
+        normalized_value = normalize_style(str(value)) if key == "style" else str(value)
+        var = tk.StringVar(value=normalized_value)
+        self.vars[key] = var
+        label = ttk.Label(parent, text=key)
+        label.grid(row=row, column=0, sticky="w", pady=2)
+        combo = ttk.Combobox(parent, textvariable=var, values=options, state="readonly")
+        combo.grid(row=row, column=1, sticky="ew", pady=2)
+        self._attach_config_help(key, label, combo)
+
+    def _add_hint(self, parent: ttk.Frame, row: int, text: str) -> None:
+        ttk.Label(parent, text=text, foreground="#555555", wraplength=560, justify=tk.LEFT).grid(
+            row=row,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(2, 6),
+        )
 
     def _add_int(self, parent: ttk.Frame, row: int, key: str, value: int) -> None:
         self._add_str(parent, row, key, str(int(value)))
@@ -218,24 +235,14 @@ class ConfigEditorDialog:
         try:
             cfg = AppConfig()
             cfg.target_lang = self._get_str("target_lang")
-            cfg.style = self._get_str("style")
+            cfg.style = normalize_style(self._get_str("style"))
             cfg.translate_toc = self._get_bool("translate_toc")
             cfg.translate_titles = self._get_bool("translate_titles")
-
-            cfg.latin_mode.translate_normally = self._get_bool("latin_mode.translate_normally")
-            cfg.poetry_mode = self._get_str("poetry_mode")
-            cfg.code_mode = self._get_str("code_mode")
-            cfg.table_mode.preserve_numbers = self._get_bool("table_mode.preserve_numbers")
-            cfg.table_mode.preserve_abbreviations = self._get_bool("table_mode.preserve_abbreviations")
 
             cfg.segmentation.max_chars_per_segment = self._get_int("segmentation.max_chars_per_segment")
             cfg.segmentation.max_chars_per_batch = self._get_int("segmentation.max_chars_per_batch")
             cfg.segmentation.max_segments_per_batch = self._get_int("segmentation.max_segments_per_batch")
-            cfg.segmentation.sentence_split_fallback = self._get_bool("segmentation.sentence_split_fallback")
-
-            cfg.context.use_prev_segment = self._get_bool("context.use_prev_segment")
             cfg.context.prev_segment_chars = self._get_int("context.prev_segment_chars")
-            cfg.context.use_term_hints = self._get_bool("context.use_term_hints")
 
             cfg.llm.temperature = self._get_float("llm.temperature")
             cfg.llm.max_retries = self._get_int("llm.max_retries")

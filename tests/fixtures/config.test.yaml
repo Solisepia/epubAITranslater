@@ -7,8 +7,6 @@ translate_titles: true
 latin_mode:
   translate_normally: true
 
-poetry_mode: line_by_line
-code_mode: skip
 table_mode:
   preserve_numbers: true
   preserve_abbreviations: true

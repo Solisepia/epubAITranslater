@@ -9,7 +9,7 @@ from typing import Protocol
 
 import requests
 
-from .config import AppConfig
+from .config import AppConfig, normalize_style
 from .models import Segment, TranslationResult
 
 JSON_SCHEMA = {
@@ -111,11 +111,11 @@ class BaseChatProvider:
         self.base_url = base_url.rstrip("/")
 
     def translate_segments(self, segments: list[Segment], termbase_hits: list[dict[str, str | bool]]) -> list[TranslationResult]:
-        payload = _build_translate_payload(segments, termbase_hits)
+        payload = _build_translate_payload(segments, termbase_hits, self.config.style)
         return self._call_with_retry(payload, expected_ids=[s.id for s in segments], strict_json=True)
 
     def revise_segments(self, segments: list[Segment], draft_results: list[TranslationResult], termbase_hits: list[dict[str, str | bool]]) -> list[TranslationResult]:
-        payload = _build_revise_payload(segments, draft_results, termbase_hits)
+        payload = _build_revise_payload(segments, draft_results, termbase_hits, self.config.style)
         return self._call_with_retry(payload, expected_ids=[s.id for s in segments], strict_json=True)
 
     def _call_with_retry(self, payload: dict, expected_ids: list[str], strict_json: bool) -> list[TranslationResult]:
@@ -271,10 +271,15 @@ def _build_messages(payload: dict, error_feedback: str) -> tuple[str, str]:
     return system, user
 
 
-def _build_translate_payload(segments: list[Segment], termbase_hits: list[dict[str, str | bool]]) -> dict:
+def _build_translate_payload(
+    segments: list[Segment],
+    termbase_hits: list[dict[str, str | bool]],
+    style: str,
+) -> dict:
+    style_guide = _translate_style_guide(style)
     return {
         "task": "draft_translate",
-        "style_guide": "faithful_literal_zh_hans",
+        "style_guide": style_guide,
         "termbase_hits": termbase_hits,
         "segments": [
             {
@@ -291,11 +296,17 @@ def _build_translate_payload(segments: list[Segment], termbase_hits: list[dict[s
     }
 
 
-def _build_revise_payload(segments: list[Segment], draft_results: list[TranslationResult], termbase_hits: list[dict[str, str | bool]]) -> dict:
+def _build_revise_payload(
+    segments: list[Segment],
+    draft_results: list[TranslationResult],
+    termbase_hits: list[dict[str, str | bool]],
+    style: str,
+) -> dict:
     draft_map = {x.id: x.translated_text for x in draft_results}
+    revise_style = _revise_style_guide(style)
     return {
         "task": "revise_translation",
-        "style_guide": "light_revision_keep_meaning_and_placeholders",
+        "style_guide": revise_style,
         "termbase_hits": termbase_hits,
         "segments": [
             {
@@ -353,3 +364,25 @@ def _is_temperature_unsupported(response_text: str) -> bool:
 
 def _chunked(items: list[Segment], size: int) -> list[list[Segment]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _translate_style_guide(style: str) -> str:
+    normalized = normalize_style(style)
+    mapping = {
+        "faithful_literal": "faithful_literal_zh_hans",
+        "faithful_fluent": "faithful_fluent_zh_hans",
+        "literary_cn": "literary_zh_hans",
+        "concise_cn": "concise_zh_hans",
+    }
+    return mapping.get(normalized, "faithful_literal_zh_hans")
+
+
+def _revise_style_guide(style: str) -> str:
+    normalized = normalize_style(style)
+    mapping = {
+        "faithful_literal": "light_revision_keep_meaning_and_placeholders",
+        "faithful_fluent": "fluent_revision_keep_meaning_and_placeholders",
+        "literary_cn": "literary_revision_keep_meaning_and_placeholders",
+        "concise_cn": "concise_revision_keep_meaning_and_placeholders",
+    }
+    return mapping.get(normalized, "light_revision_keep_meaning_and_placeholders")

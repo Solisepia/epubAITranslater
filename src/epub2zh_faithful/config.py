@@ -7,6 +7,14 @@ from typing import Any
 
 import yaml
 
+STYLE_OPTIONS = (
+    "faithful_literal",
+    "faithful_fluent",
+    "literary_cn",
+    "concise_cn",
+)
+DEFAULT_STYLE = "faithful_literal"
+
 
 @dataclass(slots=True)
 class LatinMode:
@@ -51,12 +59,10 @@ class QAConfig:
 @dataclass(slots=True)
 class AppConfig:
     target_lang: str = "zh-Hans"
-    style: str = "faithful_literal"
+    style: str = DEFAULT_STYLE
     translate_toc: bool = True
     translate_titles: bool = True
     latin_mode: LatinMode = field(default_factory=LatinMode)
-    poetry_mode: str = "line_by_line"
-    code_mode: str = "skip"
     table_mode: TableMode = field(default_factory=TableMode)
     segmentation: SegmentationConfig = field(default_factory=SegmentationConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
@@ -83,6 +89,7 @@ def load_config(path: str | None) -> AppConfig:
     data = _load_dict(path)
     cfg = AppConfig()
     _merge_into_dataclass(cfg, data)
+    cfg.style = normalize_style(cfg.style)
     return cfg
 
 
@@ -95,3 +102,10 @@ def _merge_into_dataclass(obj: Any, data: dict[str, Any]) -> None:
             _merge_into_dataclass(current, value)
         else:
             setattr(obj, key, value)
+
+
+def normalize_style(style: str) -> str:
+    candidate = (style or "").strip().lower()
+    if candidate in STYLE_OPTIONS:
+        return candidate
+    return DEFAULT_STYLE
