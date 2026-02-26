@@ -1,12 +1,28 @@
-﻿# Config README
+# Config README - 配置说明
 
-鏈枃妗ｄ笌褰撳墠浠ｇ爜瀹炵幇鍚屾锛岃鏄?`config.yaml` 涓摢浜涘瓧娈典細瀹為檯褰卞搷缈昏瘧锛屽摢浜涘瓧娈典粎涓哄吋瀹逛繚鐣欍€?
-## 1. 鍔犺浇瑙勫垯
+本文档与当前代码实现同步，说明 `config.yaml` 中哪些字段会实际影响翻译，哪些字段仅为兼容保留。
 
-- 鏀寔 `YAML` / `JSON`銆?- 浠呰鐩栦綘鏄惧紡濉啓鐨勫瓧娈碉紝鏈～鍐欎娇鐢ㄩ粯璁ゅ€笺€?- 鏈瘑鍒瓧娈典細琚拷鐣ワ紙涓嶄細鎶ラ敊锛夈€?- 寮€鍚?`--resume` 鏃讹紝宸插懡涓殑缂撳瓨娈佃惤涓嶄細閲嶇炕锛涢厤缃敼鍔ㄦ兂鍏ㄩ潰鐢熸晥璇峰叧闂?`resume` 鎴栨洿鎹?`cache.sqlite`銆?
-## 2. 榛樿閰嶇疆锛堝缓璁級
+This document is synchronized with the current code implementation, explaining which fields in `config.yaml` actually affect translation and which are retained for compatibility.
 
-褰撳墠椤圭洰榛樿妯℃澘鏈€灏忓寲涓猴細
+---
+
+## 1. 加载规则 / Loading Rules
+
+- **支持格式 / Supported Formats**: YAML / JSON
+- **覆盖规则 / Override Rule**: 仅覆盖你显式填写的字段，未填写使用默认值  
+  Only overrides fields you explicitly specify; unspecified fields use defaults.
+- **未知字段 / Unknown Fields**: 未识别字段会被忽略（不会报错）  
+  Unrecognized fields are ignored (no errors).
+- **缓存注意 / Cache Note**: 开启 `--resume` 时，已命中的缓存段落不会重翻；配置改动想全面生效请关闭 `resume` 或更换 `cache.sqlite`。  
+  With `--resume`, cached segments won't be retranslated. To apply config changes, disable `resume` or change the cache file.
+
+---
+
+## 2. 默认配置（建议）/ Default Config (Recommended)
+
+当前项目默认模板最小化为：
+
+The current project default template is minimized to:
 
 ```yaml
 style: faithful_literal
@@ -14,61 +30,109 @@ translate_toc: true
 translate_titles: true
 ```
 
-鍏朵綑椤逛娇鐢ㄥ唴缃粯璁ゅ€硷紙瑙佷笅鏂?4.2锛夈€?
-## 3. UI 涓彲缂栬緫涓斿疄闄呯敓鏁堢殑瀛楁
+其余项使用内置默认值（见下方 4.2）/ Other fields use built-in defaults (see section 4.2 below).
 
+---
 
-- 目标语言固定为简体中文（zh-Hans），不再通过 config 配置。
+## 3. UI 中可编辑且实际生效的字段 / Fields Editable in UI and Effective
 
-- `style`
-  - 浣滅敤锛氱炕璇?娑﹁壊椋庢牸锛屼細鐩存帴杩涘叆 LLM payload 鐨?`style_guide`
-  - 鍙€夋灇涓撅細
-    - `faithful_literal`锛氬繝瀹炵洿璇戯紙榛樿锛屾妧鏈枃妗?鏈鏁忔劅锛?    - `faithful_fluent`锛氬繝瀹炰絾鏇撮『鐣咃紙閫氱敤闃呰锛?    - `literary_cn`锛氬亸涔﹂潰鏂囬锛堝皬璇?鏁ｆ枃锛?    - `concise_cn`锛氭洿绠€娲佸嚌缁冿紙鎽樿/閫熻锛?  - 闈炴硶鍊间細鑷姩鍥為€€鍒?`faithful_literal`
+### 3.1 翻译风格 / Translation Style
 
-### 3.2 鍐呭鑼冨洿
+- **目标语言 / Target Language**: 固定为简体中文（zh-Hans），不再通过 config 配置  
+  Fixed to Simplified Chinese (zh-Hans), no longer configured via config.
 
-- `translate_toc`锛氭槸鍚︾炕璇戠洰褰曟枃鏈?- `translate_titles`锛氭槸鍚︾炕璇?HTML `title` 鑺傜偣
+- **`style`**
+  - **作用 / Purpose**: 翻译/润色风格，会直接进入 LLM payload 的 `style_guide`  
+    Translation/revision style, directly passed to LLM payload's `style_guide`.
+  - **可选枚举 / Options**:
+    | 风格 / Style | 说明 / Description | 推荐场景 / Recommended Use Case |
+    |-------------|-------------------|-------------------------------|
+    | `faithful_literal` | 忠实直译（默认） / Faithful literal (default) | 技术文档/术语敏感 |
+    | `faithful_fluent` | 忠实但更顺畅 / Faithful but smoother | 通用阅读 |
+    | `literary_cn` | 偏书面文风 / Literary style | 小说/散文 |
+    | `concise_cn` | 更简洁凝练 / More concise | 摘要/速读 |
+  - 非法值会自动回退到 `faithful_literal`  
+    Invalid values automatically fallback to `faithful_literal`.
 
-### 3.3 鍒嗘
+### 3.2 内容范围 / Content Scope
 
-- `segmentation.max_chars_per_segment`锛氬崟娈垫渶澶у瓧绗︽暟
-- `segmentation.max_chars_per_batch`锛氬崟鎵瑰瓧绗︿笂闄?- `segmentation.max_segments_per_batch`锛氬崟鎵规鏁颁笂闄?
-### 3.4 涓婁笅鏂?
-- `context.prev_segment_chars`锛氬墠鏂囨埅鏂暱搴?
-### 3.5 LLM 璋冪敤
+- **`translate_toc`**: 是否翻译目录文本  
+  Whether to translate table of contents text.
 
-- `llm.temperature`
-- `llm.max_retries`
-- `llm.retry_backoff_seconds`
-- `llm.timeout_seconds`
+- **`translate_titles`**: 是否翻译 HTML `title` 节点  
+  Whether to translate HTML `title` nodes.
 
-### 3.6 QA 闂ㄦ
+### 3.3 分段配置 / Segmentation
 
-- `qa.warn_ratio_limit`
-- `qa.warn_min_cap`
+| 字段 / Field | 说明 / Description | 默认值 / Default |
+|-------------|-------------------|-----------------|
+| `segmentation.max_chars_per_segment` | 单段最大字符数 / Max chars per segment | 1200 |
+| `segmentation.max_chars_per_batch` | 单批字符上限 / Max chars per batch | 12000 |
+| `segmentation.max_segments_per_batch` | 单批段数上限 / Max segments per batch | 40 |
 
-楠屾敹瑙勫垯锛?
-`warn_cap = max(int(total_segments * warn_ratio_limit), warn_min_cap)`  
-浠呭綋 `error_count == 0` 涓?`warn_count <= warn_cap` 鎵嶉€氳繃 gate銆?
-## 4. 鍏煎瀛楁璇存槑
+### 3.4 上下文 / Context
 
-### 4.1 宸插垹闄ゅ瓧娈碉紙鏃ч厤缃噷浼氳蹇界暐锛?
+| 字段 / Field | 说明 / Description | 默认值 / Default |
+|-------------|-------------------|-----------------|
+| `context.prev_segment_chars` | 前文截断长度 / Previous segment context length | 300 |
+
+### 3.5 LLM 调用 / LLM Invocation
+
+| 字段 / Field | 说明 / Description | 默认值 / Default |
+|-------------|-------------------|-----------------|
+| `llm.temperature` | 采样温度 / Sampling temperature | 0.0 |
+| `llm.max_retries` | 最大重试次数 / Max retries | 5 |
+| `llm.retry_backoff_seconds` | 重试等待秒数列表 / Retry backoff seconds list | [1, 2, 4, 8, 16] |
+| `llm.timeout_seconds` | 单次请求超时秒数 / Request timeout seconds | 120 |
+
+### 3.6 QA 门槛 / QA Threshold
+
+| 字段 / Field | 说明 / Description | 默认值 / Default |
+|-------------|-------------------|-----------------|
+| `qa.warn_ratio_limit` | QA 警告占比阈值（0~1） / QA warning ratio threshold | 0.005 |
+| `qa.warn_min_cap` | QA 警告最小上限 / QA warning minimum cap | 20 |
+
+**验收规则 / Acceptance Rule**:
+
+```
+warn_cap = max(int(total_segments * warn_ratio_limit), warn_min_cap)
+```
+
+仅当 `error_count == 0` 且 `warn_count <= warn_cap` 才通过 gate。  
+Pass gate only when `error_count == 0` and `warn_count <= warn_cap`.
+
+---
+
+## 4. 兼容字段说明 / Compatibility Fields
+
+### 4.1 已删除字段（旧配置里会被忽略）/ Removed Fields (Ignored in Old Configs)
+
 - `quote_mode.*`
 - `poetry_mode`
 - `code_mode`
 
-### 4.2 鐩墠淇濈暀鍦ㄩ厤缃ā鍨嬩腑锛屼絾 UI 宸查殣钘忥紙褰撳墠鐗堟湰涓嶉┍鍔ㄤ富娴佺▼锛?
-杩欎簺瀛楁浠嶆湁榛樿鍊煎苟鍙啓鍏ラ厤缃紝浣嗗綋鍓嶉€昏緫涓嶆寜瀹冧滑鍒嗘敮锛?
-- `latin_mode.translate_normally`
-- `table_mode.preserve_numbers`
-- `table_mode.preserve_abbreviations`
-- `segmentation.sentence_split_fallback`
-- `context.use_prev_segment`
-- `context.use_term_hints`
+### 4.2 保留但 UI 已隐藏 / Retained but Hidden in UI
 
-## 5. 甯哥敤璋冨弬妯℃澘
+这些字段仍有默认值并可写入配置，但当前逻辑不按它们分支：
 
-### 5.1 绋冲畾浼樺厛
+These fields still have defaults and can be written to config, but current logic doesn't branch on them:
+
+| 字段 / Field | 说明 / Description |
+|-------------|-------------------|
+| `latin_mode.translate_normally` | 拉丁字母文本是否按普通文本翻译 |
+| `table_mode.preserve_numbers` | 表格中是否强制保留数字 |
+| `table_mode.preserve_abbreviations` | 表格中是否保留缩写 |
+| `segmentation.sentence_split_fallback` | 分段超长时是否按句子兜底切分 |
+| `context.use_prev_segment` | 是否给模型传入上一段上下文 |
+| `context.use_term_hints` | 是否把命中的术语提示传给模型 |
+
+---
+
+## 5. 常用调参模板 / Common Tuning Templates
+
+### 5.1 稳定优先 / Stability First
+
+适合网络不稳定或 API 限流严格的场景 / Suitable for unstable networks or strict API rate limits.
 
 ```yaml
 segmentation:
@@ -81,14 +145,37 @@ llm:
   timeout_seconds: 180
 ```
 
-### 5.2 閫熷害浼樺厛锛堢綉缁滅ǔ瀹氭椂锛?
+### 5.2 速度优先 / Speed First
+
+网络稳定时使用 / Use when network is stable.
+
 ```yaml
 segmentation:
   max_chars_per_batch: 15000
   max_segments_per_batch: 60
 ```
 
-骞堕厤鍚堟彁楂?`max_concurrency`锛堣 provider 闄愭祦鑰屽畾锛夈€?
-## 6. 甯歌闂
+并配合提高 `max_concurrency`（视 provider 限流而定）/ Also increase `max_concurrency` (depends on provider rate limits).
 
-- 鏀逛簡閰嶇疆浣嗙粨鏋滄病鍙樺寲锛?  - 鍏堟鏌ユ槸鍚﹀紑鍚簡 `resume` 鍛戒腑缂撳瓨銆?- 鍙互鍐欓澶栧瓧娈靛悧锛?  - 鍙互鍐欙紝浣嗘湭璇嗗埆瀛楁浼氳蹇界暐銆?
+---
+
+## 6. 常见问题 / FAQ
+
+### Q: 改了配置但结果没变化？ / Config changed but no effect?
+
+A: 先检查是否开启了 `resume` 命中缓存。  
+A: First check if `resume` is enabled and hitting cache.
+
+### Q: 可以写额外字段吗？ / Can I write additional fields?
+
+A: 可以写，但未识别字段会被忽略。  
+A: Yes, but unrecognized fields will be ignored.
+
+### Q: 如何完全重置配置？ / How to fully reset config?
+
+A: 删除 `config.yaml`，程序会使用内置默认值。  
+A: Delete `config.yaml`; the program will use built-in defaults.
+
+---
+
+**最后更新 / Last Updated**: 2026-02-26
