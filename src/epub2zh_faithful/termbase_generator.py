@@ -77,7 +77,7 @@ def generate_termbase(
     progress_cb: ProgressCallback | None = None,
     llm_config: AppConfig | None = None,
 ) -> dict[str, int]:
-    _emit(progress_cb, "Unpacking EPUB for term extraction...")
+    _emit(progress_cb, "[术语表生成] 开始解压 EPUB...")
     book = unpack_epub(input_epub)
 
     try:
@@ -102,7 +102,7 @@ def generate_termbase(
                 for phrase in _extract_candidates(raw, options.include_single_word):
                     counter[phrase] += 1
 
-        _emit(progress_cb, f"Scanned text nodes: {total_text_nodes}")
+        _emit(progress_cb, f"[术语表生成] 扫描完成：共 {total_text_nodes} 个文本节点")
 
         filtered = [item for item in counter.items() if item[1] >= max(1, options.min_freq)]
         filtered.sort(key=lambda x: (-x[1], -len(x[0]), x[0]))
@@ -294,7 +294,7 @@ def _fill_empty_targets_with_ai(
 
     _emit(
         progress_cb,
-        f"Auto-filling empty term targets with AI: {len(empty_terms)} terms ({provider_name}/{options.fill_model})",
+        f"[术语表生成] AI 填充译文：{len(empty_terms)} 条术语 ({provider_name}/{options.fill_model})",
     )
 
     provider = LLMClientFactory.build(
@@ -332,7 +332,7 @@ def _fill_empty_targets_with_ai(
                     rejected_non_cjk += 1
                     term["target"] = ""
 
-        _emit(progress_cb, f"Term fill batch completed: {batch_idx}/{total_batches}")
+        _emit(progress_cb, f"[术语表生成] 批次 {batch_idx}/{total_batches} - {len(batch_terms)} 条术语")
 
     return filled, rejected_non_cjk
 

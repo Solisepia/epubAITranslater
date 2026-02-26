@@ -124,7 +124,7 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None) -
             config_hash=config_hash,
             prefer_revise=prefer_revise,
             resume=bool(getattr(args, "resume", False)),
-            max_concurrency=max(1, int(getattr(args, "max_concurrency", 4))),
+            max_concurrency=max(1, int(getattr(args, "max_concurrency", 2))),
             stats=stats,
             config=config,
             progress_cb=progress_cb,
@@ -136,7 +136,7 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None) -
             store=store,
             termbase=termbase,
             config_hash=config_hash,
-            max_concurrency=max(1, int(getattr(args, "max_concurrency", 4))),
+            max_concurrency=max(1, int(getattr(args, "max_concurrency", 2))),
             stats=stats,
             progress_cb=progress_cb,
         )
@@ -276,7 +276,7 @@ def _translate_with_cache(
         max_chars=config.segmentation.max_chars_per_batch,
         max_segments=config.segmentation.max_segments_per_batch,
     )
-    _emit(progress_cb, f"Prepared batches: {len(batches)}")
+    _emit(progress_cb, f"[翻译] 准备批次：{len(batches)} 批 (每批最多{config.segmentation.max_segments_per_batch} 段/{config.segmentation.max_chars_per_batch} 字符)")
 
     batch_outputs: dict[int, tuple[list[Segment], dict[str, str], dict[str, str]]] = {}
     if max_concurrency > 1 and len(batches) > 1:
@@ -289,10 +289,10 @@ def _translate_with_cache(
                 idx = future_to_idx[future]
                 draft_map, revise_map = future.result()
                 batch_outputs[idx] = (batches[idx], draft_map, revise_map)
-                _emit(progress_cb, f"Batch completed: {idx + 1}/{len(batches)}")
+                _emit(progress_cb, f"[翻译] 批次完成：{idx + 1}/{len(batches)}")
     else:
         for idx, batch in enumerate(batches):
-            _emit(progress_cb, f"Batch running: {idx + 1}/{len(batches)}")
+            _emit(progress_cb, f"[翻译] 批次进行中：{idx + 1}/{len(batches)}")
             draft_map, revise_map = _run_provider_batch(provider, batch, _collect_batch_term_hits(batch, termbase))
             batch_outputs[idx] = (batch, draft_map, revise_map)
             _emit(progress_cb, f"Batch completed: {idx + 1}/{len(batches)}")

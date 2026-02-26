@@ -31,8 +31,8 @@ class TableMode:
 @dataclass(slots=True)
 class SegmentationConfig:
     max_chars_per_segment: int = 1200
-    max_chars_per_batch: int = 12000
-    max_segments_per_batch: int = 40
+    max_chars_per_batch: int = 8000
+    max_segments_per_batch: int = 20
     sentence_split_fallback: bool = True
 
 
@@ -46,8 +46,8 @@ class ContextConfig:
 @dataclass(slots=True)
 class LLMConfig:
     temperature: float = 0.0
-    max_retries: int = 5
-    retry_backoff_seconds: list[int] = field(default_factory=lambda: [1, 2, 4, 8, 16])
+    max_retries: int = 8
+    retry_backoff_seconds: list[int] = field(default_factory=lambda: [2, 4, 8, 16, 32, 60, 60, 60])
     timeout_seconds: int = 120
 
 

@@ -37,6 +37,12 @@ class ProviderError(RuntimeError):
     pass
 
 
+class RateLimitError(ProviderError):
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 class Provider(Protocol):
     def translate_segments(self, segments: list[Segment], termbase_hits: list[dict[str, str | bool]]) -> list[TranslationResult]:
         ...
@@ -131,20 +137,21 @@ class BaseChatProvider:
         for i in range(attempts):
             try:
                 return self._call_once(payload, expected_ids, strict_json=strict_json, error_feedback=error_message)
+            except RateLimitError as exc:
+                last_exc = exc
+                error_message = str(exc)
+                retry_after = getattr(exc, "retry_after", None)
+                if retry_after:
+                    sleep_s = float(retry_after)
+                else:
+                    sleep_s = backoff[min(i, len(backoff) - 1)] if backoff else 1
+                    sleep_s = max(sleep_s, 2 ** (i + 2))
+                time.sleep(sleep_s)
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 error_message = str(exc)
                 sleep_s = backoff[min(i, len(backoff) - 1)] if backoff else 1
                 time.sleep(sleep_s)
-
-        # Fallback to single-segment mode.
-        if len(expected_ids) > 1:
-            out: list[TranslationResult] = []
-            for seg in payload["segments"]:
-                single_payload = dict(payload)
-                single_payload["segments"] = [seg]
-                out.extend(self._call_with_retry(single_payload, [seg["id"]], strict_json=True))
-            return out
 
         if last_exc:
             raise ProviderError(f"Provider call failed after retries: {last_exc}") from last_exc
@@ -200,35 +207,8 @@ class OpenAIProvider(BaseChatProvider):
 
 
 class DeepSeekProvider(BaseChatProvider):
-    MAX_SEGMENTS_PER_CALL = 8
-
     def __init__(self, api_key: str, model: str, config: AppConfig) -> None:
         super().__init__(api_key=api_key, model=model, config=config, base_url="https://api.deepseek.com/v1")
-
-    def translate_segments(self, segments: list[Segment], termbase_hits: list[dict[str, str | bool]]) -> list[TranslationResult]:
-        if len(segments) <= self.MAX_SEGMENTS_PER_CALL:
-            return super().translate_segments(segments, termbase_hits)
-
-        out: list[TranslationResult] = []
-        for chunk in _chunked(segments, self.MAX_SEGMENTS_PER_CALL):
-            out.extend(super().translate_segments(chunk, termbase_hits))
-        return out
-
-    def revise_segments(
-        self,
-        segments: list[Segment],
-        draft_results: list[TranslationResult],
-        termbase_hits: list[dict[str, str | bool]],
-    ) -> list[TranslationResult]:
-        if len(segments) <= self.MAX_SEGMENTS_PER_CALL:
-            return super().revise_segments(segments, draft_results, termbase_hits)
-
-        draft_map = {item.id: item for item in draft_results}
-        out: list[TranslationResult] = []
-        for chunk in _chunked(segments, self.MAX_SEGMENTS_PER_CALL):
-            chunk_drafts = [draft_map[s.id] for s in chunk if s.id in draft_map]
-            out.extend(super().revise_segments(chunk, chunk_drafts, termbase_hits))
-        return out
 
     def _call_once(self, payload: dict, expected_ids: list[str], strict_json: bool, error_feedback: str = "") -> list[TranslationResult]:
         system, user = _build_messages(payload, error_feedback)
@@ -255,7 +235,6 @@ class DeepSeekProvider(BaseChatProvider):
 
 
 class DashScopeProvider(BaseChatProvider):
-    MAX_SEGMENTS_PER_CALL = 8
     SUPPORTS_JSON_SCHEMA_MODELS = {"qwen-max", "qwen-max-latest", "qwen-plus", "qwen-plus-latest", "qwen-turbo", "qwen-turbo-latest", "qwen2.5-72b-instruct", "qwen2.5-vl-72b-instruct"}
     MT_MODELS = {"qwen-mt-plus", "qwen-mt-plus-latest", "qwen-mt-flash", "qwen-mt-flash-latest", "qwen-mt-lite", "qwen-mt-lite-latest", "qwen-mt-turbo", "qwen-mt-turbo-latest"}
 
@@ -282,30 +261,16 @@ class DashScopeProvider(BaseChatProvider):
                 payload = _build_translate_payload([seg], termbase_hits, self.config.style)
                 out.extend(self._call_with_retry(payload, expected_ids=[seg.id], strict_json=False))
             return out
-        
-        if len(segments) <= self.MAX_SEGMENTS_PER_CALL:
-            return super().translate_segments(segments, termbase_hits)
+        return super().translate_segments(segments, termbase_hits)
 
-        out: list[TranslationResult] = []
-        for chunk in _chunked(segments, self.MAX_SEGMENTS_PER_CALL):
-            out.extend(super().translate_segments(chunk, termbase_hits))
-        return out
-
-    def revise_segments(
-        self,
-        segments: list[Segment],
-        draft_results: list[TranslationResult],
-        termbase_hits: list[dict[str, str | bool]],
-    ) -> list[TranslationResult]:
-        if len(segments) <= self.MAX_SEGMENTS_PER_CALL:
-            return super().revise_segments(segments, draft_results, termbase_hits)
-
-        draft_map = {item.id: item for item in draft_results}
-        out: list[TranslationResult] = []
-        for chunk in _chunked(segments, self.MAX_SEGMENTS_PER_CALL):
-            chunk_drafts = [draft_map[s.id] for s in chunk if s.id in draft_map]
-            out.extend(super().revise_segments(chunk, chunk_drafts, termbase_hits))
-        return out
+    def revise_segments(self, segments: list[Segment], draft_results: list[TranslationResult], termbase_hits: list[dict[str, str | bool]]) -> list[TranslationResult]:
+        if self._mt_model:
+            out: list[TranslationResult] = []
+            for seg in segments:
+                payload = _build_revise_payload([seg], termbase_hits, self.config.style)
+                out.extend(self._call_with_retry(payload, expected_ids=[seg.id], strict_json=False))
+            return out
+        return super().revise_segments(segments, draft_results, termbase_hits)
 
     def _call_once(self, payload: dict, expected_ids: list[str], strict_json: bool, error_feedback: str = "") -> list[TranslationResult]:
         system, user = _build_messages(payload, error_feedback)
@@ -385,6 +350,17 @@ class DashScopeProvider(BaseChatProvider):
                     fallback_req["messages"] = [{"role": "user", "content": user_content}]
                     resp = self._post(fallback_req)
 
+            if resp.status_code == 429:
+                retry_after = resp.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        retry_after_float = float(retry_after)
+                    except ValueError:
+                        retry_after_float = None
+                else:
+                    retry_after_float = None
+                raise RateLimitError(f"DashScope HTTP 429: Rate limit exceeded. {resp.text[:200]}", retry_after=retry_after_float)
+            
             if resp.status_code >= 300:
                 raise ProviderError(f"DashScope HTTP {resp.status_code}: {resp.text[:300]}")
 
