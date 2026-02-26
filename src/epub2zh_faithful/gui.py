@@ -26,7 +26,7 @@ DEFAULT_TERMBASE_PATH = APP_HOME / "termbase.yaml"
 FIELD_HELP: dict[str, str] = {
     "Input EPUB": "选择要翻译的源 EPUB 文件。",
     "Output EPUB": "翻译后输出文件路径。建议使用新文件名避免覆盖原书。",
-    "Provider": "全局模式：openai/deepseek/mixed/mock。mixed 可分开指定 draft 与 revise。",
+    "Provider": "全局模式：openai/deepseek/dashscope/mixed/mock。mixed 可分开指定 draft 与 revise。",
     "Draft Provider": "初译阶段使用的服务商。",
     "Revise Provider": "二次处理阶段使用的服务商。设为 none 表示不做二次处理。",
     "Model": "默认模型名。若 Draft/Revise Model 留空则回退到这里。",
@@ -38,6 +38,7 @@ FIELD_HELP: dict[str, str] = {
     "Max Concurrency": "并发批次数。越大越快但更容易触发限流。",
     "OpenAI Key": "OpenAI API Key。仅当前 GUI 进程生效，不会自动保存到磁盘。",
     "DeepSeek Key": "DeepSeek API Key。仅当前 GUI 进程生效，不会自动保存到磁盘。",
+    "DashScope Key": "阿里云百炼 API Key。仅当前 GUI 进程生效，不会自动保存到磁盘。",
     "Resume": "开启后命中缓存的段落不会重翻，适合断点续跑。",
     "Keep Workdir": "保留临时解包目录，便于排错；会占用更多磁盘。",
     "Logs": "显示运行阶段、批次进度、错误和输出路径。",
@@ -302,10 +303,10 @@ class TranslatorUI:
 
         self.input_path = tk.StringVar()
         self.output_path = tk.StringVar()
-        self.provider = tk.StringVar(value="openai")
-        self.draft_provider = tk.StringVar(value="openai")
+        self.provider = tk.StringVar(value="dashscope")
+        self.draft_provider = tk.StringVar(value="dashscope")
         self.revise_provider = tk.StringVar(value="none")
-        self.model = tk.StringVar(value="gpt-5-mini")
+        self.model = tk.StringVar(value="qwen-plus")
         self.draft_model = tk.StringVar()
         self.revise_model = tk.StringVar()
         self.cache_path = tk.StringVar(value=str(APP_HOME / "cache.sqlite"))
@@ -314,6 +315,7 @@ class TranslatorUI:
         self.max_concurrency = tk.StringVar(value="4")
         self.openai_key = tk.StringVar()
         self.deepseek_key = tk.StringVar()
+        self.dashscope_key = tk.StringVar()
         self.resume = tk.BooleanVar(value=False)
         self.keep_workdir = tk.BooleanVar(value=False)
         self.status_text = tk.StringVar(value="idle")
@@ -341,9 +343,6 @@ class TranslatorUI:
         row = 0
         row = self._path_row(frame, row, "Input EPUB", self.input_path, is_save=False, kind="epub")
         row = self._path_row(frame, row, "Output EPUB", self.output_path, is_save=True, kind="epub")
-        row = self._entry_row(frame, row, "Provider", self.provider, values=["openai", "deepseek", "mixed", "mock"])
-        row = self._entry_row(frame, row, "Draft Provider", self.draft_provider, values=["openai", "deepseek", "mock"])
-        row = self._entry_row(frame, row, "Revise Provider", self.revise_provider, values=["openai", "deepseek", "none", "mock"])
         row = self._simple_row(frame, row, "Model", self.model)
         row = self._simple_row(frame, row, "Draft Model", self.draft_model)
         row = self._simple_row(frame, row, "Revise Model", self.revise_model)
@@ -352,8 +351,13 @@ class TranslatorUI:
         row = self._path_row(frame, row, "Termbase", self.termbase_path, is_save=True, kind="yaml")
         row = self._simple_row(frame, row, "Max Concurrency", self.max_concurrency)
 
+        row = self._entry_row(frame, row, "Provider", self.provider, values=["openai", "deepseek", "dashscope", "mixed", "mock"])
+        row = self._entry_row(frame, row, "Draft Provider", self.draft_provider, values=["openai", "deepseek", "dashscope", "mock"])
+        row = self._entry_row(frame, row, "Revise Provider", self.revise_provider, values=["openai", "deepseek", "dashscope", "none", "mock"])
+
         row = self._secret_row(frame, row, "OpenAI Key", self.openai_key)
         row = self._secret_row(frame, row, "DeepSeek Key", self.deepseek_key)
+        row = self._secret_row(frame, row, "DashScope Key", self.dashscope_key)
 
         options = ttk.Frame(frame)
         options.grid(row=row, column=0, columnspan=3, sticky="w", pady=(8, 0))
@@ -454,10 +458,13 @@ class TranslatorUI:
         elif current == "deepseek":
             self.draft_provider.set("deepseek")
             self.revise_provider.set("none")
+        elif current == "dashscope":
+            self.draft_provider.set("dashscope")
+            self.revise_provider.set("none")
         elif current == "mixed":
-            if self.draft_provider.get() not in {"openai", "deepseek", "mock"}:
-                self.draft_provider.set("openai")
-            if self.revise_provider.get() not in {"openai", "deepseek", "none", "mock"}:
+            if self.draft_provider.get() not in {"openai", "deepseek", "dashscope", "mock"}:
+                self.draft_provider.set("dashscope")
+            if self.revise_provider.get() not in {"openai", "deepseek", "dashscope", "none", "mock"}:
                 self.revise_provider.set("none")
 
     def _open_config_editor(self) -> None:
@@ -516,13 +523,15 @@ class TranslatorUI:
             os.environ["OPENAI_API_KEY"] = self.openai_key.get().strip()
         if self.deepseek_key.get().strip():
             os.environ["DEEPSEEK_API_KEY"] = self.deepseek_key.get().strip()
+        if self.dashscope_key.get().strip():
+            os.environ["DASHSCOPE_API_KEY"] = self.dashscope_key.get().strip()
 
         fill_provider = self.provider.get().strip()
         if fill_provider == "mixed":
-            fill_provider = self.draft_provider.get().strip() or "openai"
-        if fill_provider not in {"openai", "deepseek", "mock"}:
-            fill_provider = "openai"
-        fill_model = self.model.get().strip() or "gpt-5-mini"
+            fill_provider = self.draft_provider.get().strip() or "dashscope"
+        if fill_provider not in {"openai", "deepseek", "dashscope", "mock"}:
+            fill_provider = "dashscope"
+        fill_model = self.model.get().strip() or "qwen-plus"
         config_path = self.config_path.get().strip() or None
 
         self.is_running = True
@@ -562,6 +571,8 @@ class TranslatorUI:
             os.environ["OPENAI_API_KEY"] = self.openai_key.get().strip()
         if self.deepseek_key.get().strip():
             os.environ["DEEPSEEK_API_KEY"] = self.deepseek_key.get().strip()
+        if self.dashscope_key.get().strip():
+            os.environ["DASHSCOPE_API_KEY"] = self.dashscope_key.get().strip()
 
         provider = self.provider.get().strip()
         draft_provider = self.draft_provider.get().strip() or None

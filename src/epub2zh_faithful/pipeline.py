@@ -51,11 +51,20 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None) -
         draft_provider = getattr(args, "draft_provider", None) or provider_name
         revise_provider = getattr(args, "revise_provider", None) or provider_name
 
+    model_arg = getattr(args, "model", None)
+    if model_arg is None:
+        if provider_name == "dashscope":
+            model_arg = "qwen-plus"
+        elif provider_name == "deepseek":
+            model_arg = "deepseek-chat"
+        else:
+            model_arg = "gpt-5-mini"
+
     provider_settings = ProviderSettings(
         provider=provider_name,
         draft_provider=draft_provider,
         revise_provider=revise_provider,
-        model=getattr(args, "model", "gpt-5-mini"),
+        model=model_arg,
         draft_model=getattr(args, "draft_model", None),
         revise_model=getattr(args, "revise_model", None),
     )

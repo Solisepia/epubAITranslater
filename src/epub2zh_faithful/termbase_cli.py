@@ -16,8 +16,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--include-single-word", action="store_true", help="include single-word proper nouns")
     parser.add_argument("--no-merge-existing", action="store_true", help="do not merge existing output terms")
     parser.add_argument("--fill-empty-targets", action="store_true", help="use AI to fill terms with empty target")
-    parser.add_argument("--fill-provider", choices=["openai", "deepseek", "mock"], default="openai")
-    parser.add_argument("--fill-model", default="gpt-5-mini")
+    parser.add_argument("--fill-provider", choices=["openai", "deepseek", "dashscope", "mock"], default="dashscope")
+    parser.add_argument("--fill-model", default="qwen-plus")
     parser.add_argument("--fill-batch-size", type=int, default=40)
     parser.add_argument("--config", default=None, help="optional config.yaml/json for llm retry/timeout settings")
     return parser

@@ -65,8 +65,8 @@ class GenerateOptions:
     include_single_word: bool = False
     merge_existing: bool = True
     fill_empty_targets: bool = False
-    fill_provider: str = "openai"
-    fill_model: str = "gpt-5-mini"
+    fill_provider: str = "dashscope"
+    fill_model: str = "qwen-plus"
     fill_batch_size: int = 40
 
 
@@ -289,7 +289,7 @@ def _fill_empty_targets_with_ai(
         return 0, 0
 
     provider_name = options.fill_provider
-    if provider_name not in {"openai", "deepseek", "mock"}:
+    if provider_name not in {"openai", "deepseek", "dashscope", "mock"}:
         raise ValueError(f"Unsupported fill provider: {provider_name}")
 
     _emit(
