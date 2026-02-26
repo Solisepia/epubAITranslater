@@ -22,8 +22,10 @@
 
 3. **上传文件** / **Upload Files**
    - 点击 "Attach binaries by dropping them here or selecting them"
-   - 选择文件：`dist/epub2zh-faithful-client-v0.1.0.zip`
-   - 等待上传完成（约 24MB）
+   - 上传以下文件：
+     - `dist/epub2zh-faithful-client-v0.1.0.zip` (便携版 / Portable)
+     - `dist/installer/epub2zh-faithful-client-setup.exe` (安装版 / Installer)
+   - 等待上传完成（每个约 24MB）
 
 4. **发布** / **Publish**
    - 点击 "Publish release" 按钮

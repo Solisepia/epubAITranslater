@@ -44,25 +44,35 @@
 
 ## 安装包信息 / Installer Info
 
+### 安装包版本 / Installer Version
+
+**文件名 / Filename**: `epub2zh-faithful-client-setup.exe`
+**大小 / Size**: ~24 MB
+**类型 / Type**: ZIP 自解压安装包 / ZIP Self-extracting installer
+
+### 便携版 / Portable Version
+
 **文件名 / Filename**: `epub2zh-faithful-client-v0.1.0.zip`
 **大小 / Size**: ~24 MB
-**包含内容 / Contents**:
-- epub2zh-faithful-client.exe (主程序)
-- _internal/ (运行环境)
-- config.yaml (配置模板)
-- termbase.yaml (术语表模板)
-- README.md (使用说明)
-- CONFIG_README.md (配置说明)
+**类型 / Type**: 便携版 ZIP / Portable ZIP
 
 ---
 
 ## 使用方法 / Usage
 
-### 1. 解压并运行 / Extract and Run
-```
-解压 epub2zh-faithful-client-v0.1.0.zip
-双击 epub2zh-faithful-client.exe 启动图形界面
-```
+### 方法 1：安装版 / Method 1: Installer
+
+1. 下载 `epub2zh-faithful-client-setup.exe`
+2. 重命名为 `.zip` 后缀（或直接使用 7-Zip 打开）
+3. 解压到临时文件夹
+4. 运行 `install.bat`（需要管理员权限）
+5. 程序会自动创建快捷方式并启动
+
+### 方法 2：便携版 / Method 2: Portable
+
+1. 下载 `epub2zh-faithful-client-v0.1.0.zip`
+2. 解压到任意目录
+3. 双击 `epub2zh-faithful-client.exe` 启动
 
 ### 2. 配置 API Key / Configure API Key
 在界面中输入阿里云百炼 API Key：
