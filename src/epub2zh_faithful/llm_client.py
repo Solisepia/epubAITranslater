@@ -297,12 +297,13 @@ class DashScopeProvider(BaseChatProvider):
     def _call_once(self, payload: dict, expected_ids: list[str], strict_json: bool, error_feedback: str = "") -> list[TranslationResult]:
         system, user = _build_messages(payload, error_feedback)
         
+        user_content = f"{system}\n\n{user}"
+        
         if self._supports_json_schema:
             req_base = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
+                    {"role": "user", "content": user_content},
                 ],
                 "response_format": {
                     "type": "json_schema",
@@ -317,8 +318,7 @@ class DashScopeProvider(BaseChatProvider):
             req_base = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
+                    {"role": "user", "content": user_content},
                 ],
                 "response_format": {"type": "json_object"},
             }
@@ -336,6 +336,10 @@ class DashScopeProvider(BaseChatProvider):
                 fallback_req["response_format"] = {"type": "json_object"}
                 if "temperature" in fallback_req:
                     del fallback_req["temperature"]
+                resp = self._post(fallback_req)
+            elif "role must be" in resp_text and "system" in resp_text:
+                fallback_req = dict(req_base)
+                fallback_req["messages"] = [{"role": "user", "content": user_content}]
                 resp = self._post(fallback_req)
 
         if resp.status_code >= 300:
