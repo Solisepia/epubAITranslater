@@ -65,13 +65,35 @@ translate-epub input.epub -o output.epub \
 
 #### 支持的服务商 / Supported Providers
 
-| Provider | 环境变量 / Env Var | 默认模型 / Default Model |
-|----------|-------------------|-------------------------|
-| `dashscope` | `DASHSCOPE_API_KEY` | `qwen-plus` |
-| `openai` | `OPENAI_API_KEY` | `gpt-5-mini` |
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` |
-| `mixed` | 多个 / Multiple | 分别配置 / Configure separately |
-| `mock` | 无需 / None | 测试用 / For testing |
+| Provider | 环境变量 / Env Var | 默认模型 / Default Model | 说明 / Description |
+|----------|-------------------|-------------------------|-------------------|
+| `dashscope` | `DASHSCOPE_API_KEY` | `qwen-plus` | 阿里云百炼通用模型 |
+| `dashscope-mt` | `DASHSCOPE_API_KEY` | `qwen-mt-plus` | 阿里云百炼专用翻译模型（自动检测源语言） |
+| `openai` | `OPENAI_API_KEY` | `gpt-5-mini` | OpenAI GPT 模型 |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` | 深度求索模型 |
+| `mixed` | 多个 / Multiple | 分别配置 / Configure separately | 初译和润色使用不同服务商 |
+| `mock` | 无需 / None | 测试用 / For testing | 测试用，不实际调用 API |
+
+#### 模型选择逻辑 / Model Selection Logic
+
+**正式翻译时**（优先级从高到低）：
+1. 用户指定 `--model` 或 GUI Model 输入框的值
+2. Provider 的默认模型（见上表）
+3. 全局 fallback：`gpt-5-mini`
+
+**术语表填充时**：
+- GUI：使用当前选择的 Model 或 `qwen-plus`
+- CLI：`--fill-model` 参数或默认 `qwen-plus`
+- ⚠️ 术语表填充**不会**自动跟随 `--provider` 的默认模型
+
+#### 术语表填充默认配置 / Termbase Fill Defaults
+
+| Provider | 术语表填充默认模型 | 推荐场景 |
+|----------|------------------|---------|
+| `dashscope` | `qwen-plus` | ✅ 推荐：遵循 JSON Schema，可靠 |
+| `dashscope-mt` | 不推荐用于术语 | ⚠️ 仅返回纯文本，不适合术语翻译 |
+| `openai` | `gpt-5-mini` | ✅ 推荐：遵循 JSON Schema |
+| `deepseek` | `deepseek-chat` | ✅ 推荐：遵循 JSON Schema |
 
 ---
 

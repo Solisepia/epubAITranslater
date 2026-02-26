@@ -84,10 +84,10 @@ def _single_provider(name: str, model: str, config: AppConfig) -> Provider:
         if not key:
             raise ProviderError("DEEPSEEK_API_KEY is required for provider=deepseek")
         return DeepSeekProvider(api_key=key, model=model, config=config)
-    if name == "dashscope":
+    if name in ("dashscope", "dashscope-mt"):
         key = os.environ.get("DASHSCOPE_API_KEY")
         if not key:
-            raise ProviderError("DASHSCOPE_API_KEY is required for provider=dashscope")
+            raise ProviderError("DASHSCOPE_API_KEY is required for provider=dashscope/dashscope-mt")
         return DashScopeProvider(api_key=key, model=model, config=config)
     if name == "mock":
         return MockProvider()
@@ -257,19 +257,32 @@ class DeepSeekProvider(BaseChatProvider):
 class DashScopeProvider(BaseChatProvider):
     MAX_SEGMENTS_PER_CALL = 8
     SUPPORTS_JSON_SCHEMA_MODELS = {"qwen-max", "qwen-max-latest", "qwen-plus", "qwen-plus-latest", "qwen-turbo", "qwen-turbo-latest", "qwen2.5-72b-instruct", "qwen2.5-vl-72b-instruct"}
+    MT_MODELS = {"qwen-mt-plus", "qwen-mt-plus-latest", "qwen-mt-flash", "qwen-mt-flash-latest", "qwen-mt-lite", "qwen-mt-lite-latest", "qwen-mt-turbo", "qwen-mt-turbo-latest"}
 
     def __init__(self, api_key: str, model: str, config: AppConfig) -> None:
         super().__init__(api_key=api_key, model=model, config=config, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
         self._supports_json_schema = self._check_json_schema_support(model)
+        self._mt_model = self._is_mt_model(model)
 
     def _check_json_schema_support(self, model: str) -> bool:
         model_lower = model.lower()
         for supported in self.SUPPORTS_JSON_SCHEMA_MODELS:
             if supported.lower() in model_lower or model_lower in supported.lower():
                 return True
-        return "qwen" in model_lower and ("max" in model_lower or "plus" in model_lower or "turbo" in model_lower)
+        return "qwen" in model_lower and ("max" in model_lower or "plus" in model_lower or "turbo" in model_lower) and "mt" not in model_lower
+
+    def _is_mt_model(self, model: str) -> bool:
+        model_lower = model.lower()
+        return model_lower in self.MT_MODELS or "qwen-mt" in model_lower
 
     def translate_segments(self, segments: list[Segment], termbase_hits: list[dict[str, str | bool]]) -> list[TranslationResult]:
+        if self._mt_model:
+            out: list[TranslationResult] = []
+            for seg in segments:
+                payload = _build_translate_payload([seg], termbase_hits, self.config.style)
+                out.extend(self._call_with_retry(payload, expected_ids=[seg.id], strict_json=False))
+            return out
+        
         if len(segments) <= self.MAX_SEGMENTS_PER_CALL:
             return super().translate_segments(segments, termbase_hits)
 
@@ -297,57 +310,87 @@ class DashScopeProvider(BaseChatProvider):
     def _call_once(self, payload: dict, expected_ids: list[str], strict_json: bool, error_feedback: str = "") -> list[TranslationResult]:
         system, user = _build_messages(payload, error_feedback)
         
-        user_content = f"{system}\n\n{user}"
-        
-        if self._supports_json_schema:
-            req_base = {
+        if self._mt_model:
+            segments = payload.get("segments", [])
+            if len(segments) != 1:
+                raise ProviderError("qwen-mt models only support single segment translation")
+            
+            segment = segments[0]
+            user_content = segment.get("text", segment.get("source", ""))
+            req = {
                 "model": self.model,
                 "messages": [
                     {"role": "user", "content": user_content},
                 ],
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "translation_response",
-                        "strict": True,
-                        "schema": JSON_SCHEMA,
-                    },
+                "translation_options": {
+                    "source_lang": payload.get("source_lang", "auto"),
+                    "target_lang": payload.get("target_lang", "Simplified Chinese"),
                 },
             }
+            if self.config.llm.temperature is not None and self.config.llm.temperature > 0:
+                req["temperature"] = min(self.config.llm.temperature, 1.0)
+            
+            resp = self._post(req)
+            if resp.status_code >= 300:
+                raise ProviderError(f"DashScope HTTP {resp.status_code}: {resp.text[:300]}")
+            
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            seg_id = segment.get("id", expected_ids[0] if expected_ids else "unknown")
+            return [TranslationResult(id=seg_id, translated_text=content.strip())]
         else:
-            req_base = {
-                "model": self.model,
-                "messages": [
-                    {"role": "user", "content": user_content},
-                ],
-                "response_format": {"type": "json_object"},
-            }
-        
-        req_with_temperature = dict(req_base)
-        req_with_temperature["temperature"] = self.config.llm.temperature
+            user_content = f"{system}\n\n{user}"
+            
+            if self._supports_json_schema:
+                req = {
+                    "model": self.model,
+                    "messages": [
+                        {"role": "user", "content": user_content},
+                    ],
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "translation_response",
+                            "strict": True,
+                            "schema": JSON_SCHEMA,
+                        },
+                    },
+                }
+            else:
+                req = {
+                    "model": self.model,
+                    "messages": [
+                        {"role": "user", "content": user_content},
+                    ],
+                    "response_format": {"type": "json_object"},
+                }
+            
+            req["temperature"] = self.config.llm.temperature
 
-        resp = self._post(req_with_temperature)
-        if resp.status_code == 400:
-            resp_text = resp.text.lower()
-            if _is_temperature_unsupported(resp.text) or "temperature" in resp_text and "unsupported" in resp_text:
-                resp = self._post(req_base)
-            elif "json_schema" in resp_text and "unsupported" in resp_text:
-                fallback_req = dict(req_base)
-                fallback_req["response_format"] = {"type": "json_object"}
-                if "temperature" in fallback_req:
-                    del fallback_req["temperature"]
-                resp = self._post(fallback_req)
-            elif "role must be" in resp_text and "system" in resp_text:
-                fallback_req = dict(req_base)
-                fallback_req["messages"] = [{"role": "user", "content": user_content}]
-                resp = self._post(fallback_req)
+            resp = self._post(req)
+            if resp.status_code == 400:
+                resp_text = resp.text.lower()
+                if _is_temperature_unsupported(resp.text) or "temperature" in resp_text and "unsupported" in resp_text:
+                    if "temperature" in req:
+                        del req["temperature"]
+                    resp = self._post(req)
+                elif "json_schema" in resp_text and "unsupported" in resp_text:
+                    fallback_req = dict(req)
+                    fallback_req["response_format"] = {"type": "json_object"}
+                    if "temperature" in fallback_req:
+                        del fallback_req["temperature"]
+                    resp = self._post(fallback_req)
+                elif "role must be" in resp_text and "system" in resp_text:
+                    fallback_req = dict(req)
+                    fallback_req["messages"] = [{"role": "user", "content": user_content}]
+                    resp = self._post(fallback_req)
 
-        if resp.status_code >= 300:
-            raise ProviderError(f"DashScope HTTP {resp.status_code}: {resp.text[:300]}")
+            if resp.status_code >= 300:
+                raise ProviderError(f"DashScope HTTP {resp.status_code}: {resp.text[:300]}")
 
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        return _parse_results(content, expected_ids)
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            return _parse_results(content, expected_ids)
 
     def _post(self, req: dict) -> requests.Response:
         return requests.post(
@@ -402,6 +445,8 @@ def _build_translate_payload(
             for s in segments
         ],
         "output_schema": {"results": [{"id": "string", "translated_text": "string"}]},
+        "source_lang": "auto",
+        "target_lang": "Simplified Chinese",
     }
 
 
@@ -430,6 +475,8 @@ def _build_revise_payload(
             for s in segments
         ],
         "output_schema": {"results": [{"id": "string", "translated_text": "string"}]},
+        "source_lang": "auto",
+        "target_lang": "Simplified Chinese",
     }
 
 

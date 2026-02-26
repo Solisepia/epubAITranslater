@@ -44,17 +44,20 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None) -
     termbase = Termbase.load(getattr(args, "termbase", None))
     cache_path = getattr(args, "cache", None) or "cache.sqlite"
     provider_name = getattr(args, "provider")
+    actual_provider = provider_name if provider_name != "dashscope-mt" else "dashscope"
     if provider_name == "mixed":
         draft_provider = getattr(args, "draft_provider", None) or "openai"
         revise_provider = getattr(args, "revise_provider", None) or "deepseek"
     else:
-        draft_provider = getattr(args, "draft_provider", None) or provider_name
-        revise_provider = getattr(args, "revise_provider", None) or provider_name
+        draft_provider = getattr(args, "draft_provider", None) or actual_provider
+        revise_provider = getattr(args, "revise_provider", None) or actual_provider
 
     model_arg = getattr(args, "model", None)
     if model_arg is None:
         if provider_name == "dashscope":
             model_arg = "qwen-plus"
+        elif provider_name == "dashscope-mt":
+            model_arg = "qwen-mt-plus"
         elif provider_name == "deepseek":
             model_arg = "deepseek-chat"
         else:

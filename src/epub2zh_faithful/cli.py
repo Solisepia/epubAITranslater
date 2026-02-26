@@ -11,9 +11,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("input", help="input epub path")
     parser.add_argument("-o", "--output", required=True, help="output epub path")
 
-    parser.add_argument("--provider", choices=["openai", "deepseek", "dashscope", "mixed", "mock"], default="dashscope")
-    parser.add_argument("--draft-provider", choices=["openai", "deepseek", "dashscope", "mock"], default=None)
-    parser.add_argument("--revise-provider", choices=["openai", "deepseek", "dashscope", "none", "mock"], default=None)
+    parser.add_argument("--provider", choices=["openai", "deepseek", "dashscope", "dashscope-mt", "mixed", "mock"], default="dashscope")
+    parser.add_argument("--draft-provider", choices=["openai", "deepseek", "dashscope", "dashscope-mt", "mock"], default=None)
+    parser.add_argument("--revise-provider", choices=["openai", "deepseek", "dashscope", "dashscope-mt", "none", "mock"], default=None)
     parser.add_argument("--model", default="qwen-plus")
     parser.add_argument("--draft-model", default=None)
     parser.add_argument("--revise-model", default=None)

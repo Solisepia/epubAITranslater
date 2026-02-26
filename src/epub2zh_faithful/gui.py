@@ -351,9 +351,9 @@ class TranslatorUI:
         row = self._path_row(frame, row, "Termbase", self.termbase_path, is_save=True, kind="yaml")
         row = self._simple_row(frame, row, "Max Concurrency", self.max_concurrency)
 
-        row = self._entry_row(frame, row, "Provider", self.provider, values=["openai", "deepseek", "dashscope", "mixed", "mock"])
-        row = self._entry_row(frame, row, "Draft Provider", self.draft_provider, values=["openai", "deepseek", "dashscope", "mock"])
-        row = self._entry_row(frame, row, "Revise Provider", self.revise_provider, values=["openai", "deepseek", "dashscope", "none", "mock"])
+        row = self._entry_row(frame, row, "Provider", self.provider, values=["openai", "deepseek", "dashscope", "dashscope-mt", "mixed", "mock"])
+        row = self._entry_row(frame, row, "Draft Provider", self.draft_provider, values=["openai", "deepseek", "dashscope", "dashscope-mt", "mock"])
+        row = self._entry_row(frame, row, "Revise Provider", self.revise_provider, values=["openai", "deepseek", "dashscope", "dashscope-mt", "none", "mock"])
 
         row = self._secret_row(frame, row, "OpenAI Key", self.openai_key)
         row = self._secret_row(frame, row, "DeepSeek Key", self.deepseek_key)
@@ -461,6 +461,11 @@ class TranslatorUI:
         elif current == "dashscope":
             self.draft_provider.set("dashscope")
             self.revise_provider.set("none")
+            self.model.set("qwen-plus")
+        elif current == "dashscope-mt":
+            self.draft_provider.set("dashscope")
+            self.revise_provider.set("none")
+            self.model.set("qwen-mt-plus")
         elif current == "mixed":
             if self.draft_provider.get() not in {"openai", "deepseek", "dashscope", "mock"}:
                 self.draft_provider.set("dashscope")
