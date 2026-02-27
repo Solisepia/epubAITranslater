@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
@@ -382,6 +382,9 @@ def _run_provider_batch(
             retry_revise = provider.revise_segments(retry_targets, retry_draft, term_hits)
             retry_draft_map = {item.id: item.translated_text for item in retry_draft}
             retry_revise_map = {item.id: item.translated_text for item in retry_revise}
+        except Exception:
+            # Retry failed, keep original draft
+            continue
         next_retry_targets: list[Segment] = []
         for seg in retry_targets:
             candidate = _select_preferred_candidate(
