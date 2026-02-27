@@ -34,7 +34,7 @@ class LLMConfig:
     temperature: float = 0.0
     max_retries: int = 8
     retry_backoff_seconds: list[int] = field(default_factory=lambda: [2, 4, 8, 16, 32, 60, 60, 60])
-    timeout_seconds: int = 120
+    timeout_seconds: int = 60
 
 
 @dataclass(slots=True)

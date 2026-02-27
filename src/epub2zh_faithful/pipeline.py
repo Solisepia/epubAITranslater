@@ -349,10 +349,15 @@ def _run_provider_batch(
     provider: object,
     batch: list[Segment],
     term_hits: list[dict[str, str | bool]],
+    timeout_seconds: int = 60,
 ) -> tuple[dict[str, str], dict[str, str]]:
-    draft = provider.translate_segments(batch, term_hits)
-    draft = post_edit(draft)
-    revise = provider.revise_segments(batch, draft, term_hits)
+    try:
+        draft = provider.translate_segments(batch, term_hits)
+        draft = post_edit(draft)
+        revise = provider.revise_segments(batch, draft, term_hits)
+    except Exception as e:
+        raise RuntimeError(f"Batch translation failed: {e}") from e
+    
     draft_map = {item.id: item.translated_text for item in draft}
     revise_map = {item.id: item.translated_text for item in revise}
     for seg in batch:
@@ -372,10 +377,11 @@ def _run_provider_batch(
     for _ in range(2):
         if not retry_targets:
             break
-        retry_draft = post_edit(provider.translate_segments(retry_targets, term_hits))
-        retry_revise = provider.revise_segments(retry_targets, retry_draft, term_hits)
-        retry_draft_map = {item.id: item.translated_text for item in retry_draft}
-        retry_revise_map = {item.id: item.translated_text for item in retry_revise}
+        try:
+            retry_draft = post_edit(provider.translate_segments(retry_targets, term_hits))
+            retry_revise = provider.revise_segments(retry_targets, retry_draft, term_hits)
+            retry_draft_map = {item.id: item.translated_text for item in retry_draft}
+            retry_revise_map = {item.id: item.translated_text for item in retry_revise}
         next_retry_targets: list[Segment] = []
         for seg in retry_targets:
             candidate = _select_preferred_candidate(

@@ -762,8 +762,8 @@ class TranslatorUI:
         if self.is_running:
             self._log("Stopping translation...")
             self.is_running = False
-            if self.worker_thread and self.worker_thread.is_alive():
-                self.worker_thread.join(timeout=5)
+            # 不等待线程完成，让它在后台自然结束
+            # 强制关闭窗口
         self._save_ui_state()
         self.root.destroy()
 
@@ -773,9 +773,10 @@ class TranslatorUI:
         self.is_running = False
         self.pause_btn.configure(state="disabled", text="Stopping...")
         self.status_text.set("stopping")
-        self._log("Stopping translation (will finish current batch)...")
-        # 注意：pause_event 不再使用，改用 is_running 标志
-        # pipeline 中的 progress_cb 会检查 is_running
+        self._log("Stopping translation...")
+        self._log("注意：正在进行的 API 调用会在 60 秒超时后自动终止")
+        # 不等待线程完成，立即返回
+        # 线程会在后台检查 is_running 并停止
 
 
 def main() -> int:
