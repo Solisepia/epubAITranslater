@@ -279,6 +279,8 @@ def _translate_with_cache(
     _emit(progress_cb, f"[翻译] 准备批次：{len(batches)} 批 (每批最多{config.segmentation.max_segments_per_batch} 段/{config.segmentation.max_chars_per_batch} 字符)")
 
     batch_outputs: dict[int, tuple[list[Segment], dict[str, str], dict[str, str]]] = {}
+    failed_segments: list[tuple[Segment, str]] = []
+    
     if max_concurrency > 1 and len(batches) > 1:
         with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
             future_to_idx = {
@@ -287,22 +289,35 @@ def _translate_with_cache(
             }
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
-                draft_map, revise_map = future.result()
-                batch_outputs[idx] = (batches[idx], draft_map, revise_map)
+                try:
+                    draft_map, revise_map = future.result()
+                    batch_outputs[idx] = (batches[idx], draft_map, revise_map)
+                except Exception as e:
+                    _emit(progress_cb, f"[错误] 批次 {idx + 1} 翻译失败：{e}")
+                    for seg in batches[idx]:
+                        failed_segments.append((seg, str(e)))
                 _emit(progress_cb, f"[翻译] 批次完成：{idx + 1}/{len(batches)}")
     else:
         for idx, batch in enumerate(batches):
             _emit(progress_cb, f"[翻译] 批次进行中：{idx + 1}/{len(batches)}")
-            draft_map, revise_map = _run_provider_batch(provider, batch, _collect_batch_term_hits(batch, termbase))
-            batch_outputs[idx] = (batch, draft_map, revise_map)
+            try:
+                draft_map, revise_map = _run_provider_batch(provider, batch, _collect_batch_term_hits(batch, termbase))
+                batch_outputs[idx] = (batch, draft_map, revise_map)
+            except Exception as e:
+                _emit(progress_cb, f"[错误] 批次 {idx + 1} 翻译失败：{e}")
+                for seg in batch:
+                    failed_segments.append((seg, str(e)))
             _emit(progress_cb, f"Batch completed: {idx + 1}/{len(batches)}")
 
-    for idx in sorted(batch_outputs.keys()):
-        batch, draft_map, revise_map = batch_outputs[idx]
+    # 检查是否有段落未翻译
+    translated_ids = set()
+    for idx, (batch, draft_map, revise_map) in batch_outputs.items():
         for seg in batch:
-            source_hash = sha256_text(seg.source_text)
             out_text = revise_map.get(seg.id, "")
+            if out_text.strip():
+                translated_ids.add(seg.id)
             out[seg.id] = out_text
+            source_hash = sha256_text(seg.source_text)
             store.upsert_translation(
                 segment_id=seg.id,
                 source_hash=source_hash,
@@ -315,6 +330,31 @@ def _translate_with_cache(
 
         stats.llm_calls += 1
         store.commit()
+    
+    # 报告未翻译的段落
+    if failed_segments:
+        _emit(progress_cb, f"[警告] {len(failed_segments)} 个段落翻译失败，将使用原文")
+        for seg, error in failed_segments:
+            out[seg.id] = seg.source_text  # 使用原文作为 fallback
+    
+    # 检查遗漏的段落
+    missing_count = 0
+    for seg in segments:
+        source_hash = sha256_text(seg.source_text)
+        if seg.id not in out or not out[seg.id].strip():
+            missing_count += 1
+            out[seg.id] = seg.source_text  # 使用原文作为 fallback
+            store.upsert_translation(
+                segment_id=seg.id,
+                source_hash=source_hash,
+                config_hash=config_hash,
+                provider=provider.__class__.__name__,
+                draft_text=None,
+                revise_text=seg.source_text,
+            )
+    
+    if missing_count > 0:
+        _emit(progress_cb, f"[警告] {missing_count} 个段落无翻译结果，已保留原文")
 
     return out
 
