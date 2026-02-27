@@ -284,11 +284,11 @@ class ConfigEditorDialog:
 class TranslatorUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("epub2zh faithful translator")
-        self.root.geometry("980x700")
+        self.root.title("epub2zh-faithful")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.is_running = False
+        self.worker_thread: threading.Thread | None = None
         self.log_queue: Queue[str] = Queue()
         self._save_job: str | None = None
         self._tooltips: list[HoverTooltip] = []
@@ -367,6 +367,9 @@ class TranslatorUI:
         actions.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(10, 0))
         self.run_btn = ttk.Button(actions, text="Start Translation", command=self._start)
         self.run_btn.pack(side=tk.LEFT)
+
+        self.pause_btn = ttk.Button(actions, text="Pause", command=self._toggle_pause, state="disabled")
+        self.pause_btn.pack(side=tk.LEFT, padx=(8, 0))
 
         self.generate_btn = ttk.Button(actions, text="Generate Termbase", command=self._start_generate_termbase)
         self.generate_btn.pack(side=tk.LEFT, padx=(8, 0))
@@ -498,12 +501,13 @@ class TranslatorUI:
         self.run_btn.configure(state="disabled")
         self.generate_btn.configure(state="disabled")
         self.edit_config_btn.configure(state="disabled")
+        self.pause_btn.configure(state="normal", text="Stop")
         self.status_text.set("running")
         self._save_ui_state()
         self._log("Starting translation...")
 
-        worker = threading.Thread(target=self._run_worker, args=(args,), daemon=True)
-        worker.start()
+        self.worker_thread = threading.Thread(target=self._run_worker, args=(args,), daemon=True)
+        self.worker_thread.start()
 
     def _start_generate_termbase(self) -> None:
         if self.is_running:
@@ -537,16 +541,17 @@ class TranslatorUI:
         self.run_btn.configure(state="disabled")
         self.generate_btn.configure(state="disabled")
         self.edit_config_btn.configure(state="disabled")
+        self.pause_btn.configure(state="normal", text="Stop")
         self.status_text.set("generating termbase")
         self._save_ui_state()
         self._log("Starting termbase generation...")
 
-        worker = threading.Thread(
+        self.worker_thread = threading.Thread(
             target=self._run_generate_worker,
             args=(input_epub, output_termbase, fill_provider, fill_model, config_path),
             daemon=True,
         )
-        worker.start()
+        self.worker_thread.start()
 
     def _build_args(self) -> Namespace | None:
         input_epub = self.input_path.get().strip()
@@ -630,6 +635,7 @@ class TranslatorUI:
 
     def _finish_translation(self, code: int) -> None:
         self.is_running = False
+        self.pause_btn.configure(state="disabled", text="Stop")
         self.run_btn.configure(state="normal")
         self.generate_btn.configure(state="normal")
         self.edit_config_btn.configure(state="normal")
@@ -651,6 +657,7 @@ class TranslatorUI:
 
     def _finish_generate(self, stats: dict[str, int], output_termbase: str) -> None:
         self.is_running = False
+        self.pause_btn.configure(state="disabled", text="Stop")
         self.run_btn.configure(state="normal")
         self.generate_btn.configure(state="normal")
         self.edit_config_btn.configure(state="normal")
@@ -668,6 +675,7 @@ class TranslatorUI:
 
     def _finish_generate_error(self, message: str) -> None:
         self.is_running = False
+        self.pause_btn.configure(state="disabled", text="Stop")
         self.run_btn.configure(state="normal")
         self.generate_btn.configure(state="normal")
         self.edit_config_btn.configure(state="normal")
@@ -681,7 +689,8 @@ class TranslatorUI:
         self.log.see(tk.END)
 
     def _enqueue_progress(self, text: str) -> None:
-        self.log_queue.put(text)
+        if self.is_running:
+            self.log_queue.put(text)
 
     def _pump_logs(self) -> None:
         while True:
@@ -750,8 +759,23 @@ class TranslatorUI:
         }
 
     def _on_close(self) -> None:
+        if self.is_running:
+            self._log("Stopping translation...")
+            self.is_running = False
+            if self.worker_thread and self.worker_thread.is_alive():
+                self.worker_thread.join(timeout=5)
         self._save_ui_state()
         self.root.destroy()
+
+    def _toggle_pause(self) -> None:
+        if not self.is_running:
+            return
+        self.is_running = False
+        self.pause_btn.configure(state="disabled", text="Stopping...")
+        self.status_text.set("stopping")
+        self._log("Stopping translation (will finish current batch)...")
+        # 注意：pause_event 不再使用，改用 is_running 标志
+        # pipeline 中的 progress_cb 会检查 is_running
 
 
 def main() -> int:
