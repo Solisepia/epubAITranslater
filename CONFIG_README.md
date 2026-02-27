@@ -110,21 +110,11 @@ Pass gate only when `error_count == 0` and `warn_count <= warn_cap`.
 - `quote_mode.*`
 - `poetry_mode`
 - `code_mode`
-
-### 4.2 保留但 UI 已隐藏 / Retained but Hidden in UI
-
-这些字段仍有默认值并可写入配置，但当前逻辑不按它们分支：
-
-These fields still have defaults and can be written to config, but current logic doesn't branch on them:
-
-| 字段 / Field | 说明 / Description |
-|-------------|-------------------|
-| `latin_mode.translate_normally` | 拉丁字母文本是否按普通文本翻译 |
-| `table_mode.preserve_numbers` | 表格中是否强制保留数字 |
-| `table_mode.preserve_abbreviations` | 表格中是否保留缩写 |
-| `segmentation.sentence_split_fallback` | 分段超长时是否按句子兜底切分 |
-| `context.use_prev_segment` | 是否给模型传入上一段上下文 |
-| `context.use_term_hints` | 是否把命中的术语提示传给模型 |
+- `latin_mode.*`
+- `table_mode.*`
+- `segmentation.sentence_split_fallback`
+- `context.use_prev_segment`
+- `context.use_term_hints`
 
 ---
 

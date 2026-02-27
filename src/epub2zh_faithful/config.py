@@ -18,29 +18,15 @@ FIXED_TARGET_LANG = "zh-Hans"
 
 
 @dataclass(slots=True)
-class LatinMode:
-    translate_normally: bool = True
-
-
-@dataclass(slots=True)
-class TableMode:
-    preserve_numbers: bool = True
-    preserve_abbreviations: bool = True
-
-
-@dataclass(slots=True)
 class SegmentationConfig:
     max_chars_per_segment: int = 1200
     max_chars_per_batch: int = 8000
     max_segments_per_batch: int = 20
-    sentence_split_fallback: bool = True
 
 
 @dataclass(slots=True)
 class ContextConfig:
-    use_prev_segment: bool = True
     prev_segment_chars: int = 300
-    use_term_hints: bool = True
 
 
 @dataclass(slots=True)
@@ -62,8 +48,6 @@ class AppConfig:
     style: str = DEFAULT_STYLE
     translate_toc: bool = True
     translate_titles: bool = True
-    latin_mode: LatinMode = field(default_factory=LatinMode)
-    table_mode: TableMode = field(default_factory=TableMode)
     segmentation: SegmentationConfig = field(default_factory=SegmentationConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
