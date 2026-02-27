@@ -331,11 +331,28 @@ def _translate_with_cache(
         stats.llm_calls += 1
         store.commit()
     
-    # 报告未翻译的段落
+    # 报告并尝试重试失败的段落
     if failed_segments:
-        _emit(progress_cb, f"[警告] {len(failed_segments)} 个段落翻译失败，将使用原文")
-        for seg, error in failed_segments:
-            out[seg.id] = seg.source_text  # 使用原文作为 fallback
+        _emit(progress_cb, f"[警告] {len(failed_segments)} 个段落翻译失败，尝试单独重试...")
+        
+        # 尝试单独重试失败的段落（降低并发，逐段重试）
+        retry_failed: list[Segment] = [seg for seg, _ in failed_segments]
+        for seg in retry_failed:
+            try:
+                _emit(progress_cb, f"  重试段落 {seg.id}...")
+                retry_draft = post_edit(provider.translate_segments([seg], []))
+                retry_revise = provider.revise_segments([seg], retry_draft, [])
+                result = retry_revise[0].translated_text if retry_revise else ""
+                
+                if result.strip():
+                    out[seg.id] = result
+                    _emit(progress_cb, f"  ✓ 段落 {seg.id} 重试成功")
+                else:
+                    out[seg.id] = seg.source_text
+                    _emit(progress_cb, f"  ✗ 段落 {seg.id} 重试仍失败，使用原文")
+            except Exception as e:
+                out[seg.id] = seg.source_text
+                _emit(progress_cb, f"  ✗ 段落 {seg.id} 重试异常：{e}，使用原文")
     
     # 检查遗漏的段落
     missing_count = 0
@@ -343,18 +360,36 @@ def _translate_with_cache(
         source_hash = sha256_text(seg.source_text)
         if seg.id not in out or not out[seg.id].strip():
             missing_count += 1
-            out[seg.id] = seg.source_text  # 使用原文作为 fallback
+            # 尝试单独翻译遗漏的段落
+            try:
+                _emit(progress_cb, f"  补翻段落 {seg.id}...")
+                draft = post_edit(provider.translate_segments([seg], []))
+                revise = provider.revise_segments([seg], draft, [])
+                result = revise[0].translated_text if revise else ""
+                
+                if result.strip():
+                    out[seg.id] = result
+                    _emit(progress_cb, f"  ✓ 段落 {seg.id} 补翻成功")
+                else:
+                    out[seg.id] = seg.source_text
+            except Exception as e:
+                _emit(progress_cb, f"  ✗ 段落 {seg.id} 补翻失败：{e}，使用原文")
+                out[seg.id] = seg.source_text
+            
+            # 记录到数据库
             store.upsert_translation(
                 segment_id=seg.id,
                 source_hash=source_hash,
                 config_hash=config_hash,
                 provider=provider.__class__.__name__,
-                draft_text=None,
-                revise_text=seg.source_text,
+                draft_text=out[seg.id] if out[seg.id] != seg.source_text else None,
+                revise_text=out[seg.id],
             )
     
     if missing_count > 0:
-        _emit(progress_cb, f"[警告] {missing_count} 个段落无翻译结果，已保留原文")
+        final_missing = sum(1 for seg in segments if out.get(seg.id, "") == seg.source_text)
+        if final_missing > 0:
+            _emit(progress_cb, f"[警告] 最终仍有 {final_missing} 个段落使用原文，请检查 API 状态或降低并发数")
 
     return out
 
