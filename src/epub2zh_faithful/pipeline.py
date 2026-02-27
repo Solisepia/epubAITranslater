@@ -279,7 +279,7 @@ def _translate_with_cache(
     _emit(progress_cb, f"[翻译] 准备批次：{len(batches)} 批 (每批最多{config.segmentation.max_segments_per_batch} 段/{config.segmentation.max_chars_per_batch} 字符)")
 
     batch_outputs: dict[int, tuple[list[Segment], dict[str, str], dict[str, str]]] = {}
-    failed_segments: list[tuple[Segment, str]] = []
+    failed_segment_ids: set[str] = set()
     
     if max_concurrency > 1 and len(batches) > 1:
         with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
@@ -295,7 +295,7 @@ def _translate_with_cache(
                 except Exception as e:
                     _emit(progress_cb, f"[错误] 批次 {idx + 1} 翻译失败：{e}")
                     for seg in batches[idx]:
-                        failed_segments.append((seg, str(e)))
+                        failed_segment_ids.add(seg.id)
                 _emit(progress_cb, f"[翻译] 批次完成：{idx + 1}/{len(batches)}")
     else:
         for idx, batch in enumerate(batches):
@@ -306,18 +306,15 @@ def _translate_with_cache(
             except Exception as e:
                 _emit(progress_cb, f"[错误] 批次 {idx + 1} 翻译失败：{e}")
                 for seg in batch:
-                    failed_segments.append((seg, str(e)))
+                    failed_segment_ids.add(seg.id)
             _emit(progress_cb, f"Batch completed: {idx + 1}/{len(batches)}")
 
-    # 检查是否有段落未翻译
-    translated_ids = set()
-    for idx, (batch, draft_map, revise_map) in batch_outputs.items():
+    for idx in sorted(batch_outputs.keys()):
+        batch, draft_map, revise_map = batch_outputs[idx]
         for seg in batch:
-            out_text = revise_map.get(seg.id, "")
-            if out_text.strip():
-                translated_ids.add(seg.id)
-            out[seg.id] = out_text
             source_hash = sha256_text(seg.source_text)
+            out_text = revise_map.get(seg.id, "")
+            out[seg.id] = out_text
             store.upsert_translation(
                 segment_id=seg.id,
                 source_hash=source_hash,
@@ -331,65 +328,10 @@ def _translate_with_cache(
         stats.llm_calls += 1
         store.commit()
     
-    # 报告并尝试重试失败的段落
-    if failed_segments:
-        _emit(progress_cb, f"[警告] {len(failed_segments)} 个段落翻译失败，尝试单独重试...")
-        
-        # 尝试单独重试失败的段落（降低并发，逐段重试）
-        retry_failed: list[Segment] = [seg for seg, _ in failed_segments]
-        for seg in retry_failed:
-            try:
-                _emit(progress_cb, f"  重试段落 {seg.id}...")
-                retry_draft = post_edit(provider.translate_segments([seg], []))
-                retry_revise = provider.revise_segments([seg], retry_draft, [])
-                result = retry_revise[0].translated_text if retry_revise else ""
-                
-                if result.strip():
-                    out[seg.id] = result
-                    _emit(progress_cb, f"  ✓ 段落 {seg.id} 重试成功")
-                else:
-                    out[seg.id] = seg.source_text
-                    _emit(progress_cb, f"  ✗ 段落 {seg.id} 重试仍失败，使用原文")
-            except Exception as e:
-                out[seg.id] = seg.source_text
-                _emit(progress_cb, f"  ✗ 段落 {seg.id} 重试异常：{e}，使用原文")
-    
-    # 检查遗漏的段落
-    missing_count = 0
-    for seg in segments:
-        source_hash = sha256_text(seg.source_text)
-        if seg.id not in out or not out[seg.id].strip():
-            missing_count += 1
-            # 尝试单独翻译遗漏的段落
-            try:
-                _emit(progress_cb, f"  补翻段落 {seg.id}...")
-                draft = post_edit(provider.translate_segments([seg], []))
-                revise = provider.revise_segments([seg], draft, [])
-                result = revise[0].translated_text if revise else ""
-                
-                if result.strip():
-                    out[seg.id] = result
-                    _emit(progress_cb, f"  ✓ 段落 {seg.id} 补翻成功")
-                else:
-                    out[seg.id] = seg.source_text
-            except Exception as e:
-                _emit(progress_cb, f"  ✗ 段落 {seg.id} 补翻失败：{e}，使用原文")
-                out[seg.id] = seg.source_text
-            
-            # 记录到数据库
-            store.upsert_translation(
-                segment_id=seg.id,
-                source_hash=source_hash,
-                config_hash=config_hash,
-                provider=provider.__class__.__name__,
-                draft_text=out[seg.id] if out[seg.id] != seg.source_text else None,
-                revise_text=out[seg.id],
-            )
-    
-    if missing_count > 0:
-        final_missing = sum(1 for seg in segments if out.get(seg.id, "") == seg.source_text)
-        if final_missing > 0:
-            _emit(progress_cb, f"[警告] 最终仍有 {final_missing} 个段落使用原文，请检查 API 状态或降低并发数")
+    # 注意：失败的段落会在后续的 _repair_problematic_segments 中统一处理
+    # 这里只记录日志，不进行重试
+    if failed_segment_ids:
+        _emit(progress_cb, f"[注意] {len(failed_segment_ids)} 个段落翻译异常，将在重翻阶段处理")
 
     return out
 
@@ -543,7 +485,7 @@ def _repair_problematic_segments(
     if not pending:
         return
 
-    _emit(progress_cb, f"Repair pass: targeted segments={len(pending)}")
+    _emit(progress_cb, f"[重翻] 开始处理问题段落：{len(pending)} 个")
 
     single_batches = [[seg] for seg in pending]
     batch_outputs: dict[int, tuple[list[Segment], dict[str, str], dict[str, str]]] = {}
@@ -555,12 +497,18 @@ def _repair_problematic_segments(
             }
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
-                draft_map, revise_map = future.result()
-                batch_outputs[idx] = (single_batches[idx], draft_map, revise_map)
+                try:
+                    draft_map, revise_map = future.result()
+                    batch_outputs[idx] = (single_batches[idx], draft_map, revise_map)
+                except Exception as e:
+                    _emit(progress_cb, f"[错误] 重翻段落失败：{e}")
     else:
         for idx, batch in enumerate(single_batches):
-            draft_map, revise_map = _run_provider_batch(provider, batch, _collect_batch_term_hits(batch, termbase))
-            batch_outputs[idx] = (batch, draft_map, revise_map)
+            try:
+                draft_map, revise_map = _run_provider_batch(provider, batch, _collect_batch_term_hits(batch, termbase))
+                batch_outputs[idx] = (batch, draft_map, revise_map)
+            except Exception as e:
+                _emit(progress_cb, f"[错误] 重翻段落失败：{e}")
 
     still_bad = 0
     for idx in sorted(batch_outputs.keys()):
@@ -586,7 +534,11 @@ def _repair_problematic_segments(
         stats.llm_calls += 1
 
     store.commit()
-    _emit(progress_cb, f"Repair pass complete: unresolved={still_bad}")
+    
+    if still_bad > 0:
+        _emit(progress_cb, f"[警告] 重翻完成：仍有 {still_bad} 个段落未解决，已保留原文")
+    else:
+        _emit(progress_cb, f"[重翻] 完成：所有问题段落已解决")
 
 
 def _write_failure_artifacts(qa_report_path: Path, qa_summary_path: Path, message: str, stage: str) -> None:
