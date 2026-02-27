@@ -762,8 +762,8 @@ class TranslatorUI:
         if self.is_running:
             self._log("Stopping translation...")
             self.is_running = False
-            # 不等待线程完成，让它在后台自然结束
-            # 强制关闭窗口
+            # 不等待线程完成，直接关闭窗口
+            # 后台线程会在 API 超时后自动终止
         self._save_ui_state()
         self.root.destroy()
 
@@ -776,12 +776,8 @@ class TranslatorUI:
         self._log("Stopping translation...")
         self._log("注意：正在进行的 API 调用会在 60 秒超时后自动终止")
         self._log("已翻译的段落已保存到缓存，下次可继续")
-        
-        # 延迟 2 秒后关闭窗口，让用户看到提示
-        def close_after_delay():
-            self._save_ui_state()
-            self.root.destroy()
-        self.root.after(2000, close_after_delay)
+        # 不关闭窗口，让用户看到日志
+        # 后台线程会在 60 秒超时后自动终止
 
 
 def main() -> int:
