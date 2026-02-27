@@ -600,7 +600,9 @@ class TranslatorUI:
         )
 
     def _run_worker(self, args: Namespace) -> None:
-        code = run_translation(args, progress_cb=self._enqueue_progress)
+        # 创建停止检查回调
+        should_stop = lambda: not self.is_running
+        code = run_translation(args, progress_cb=self._enqueue_progress, should_stop_cb=should_stop)
         self.root.after(0, lambda: self._finish_translation(code))
 
     def _run_generate_worker(
@@ -689,8 +691,8 @@ class TranslatorUI:
         self.log.see(tk.END)
 
     def _enqueue_progress(self, text: str) -> None:
-        if self.is_running:
-            self.log_queue.put(text)
+        # 即使停止了也继续添加日志，让用户看到进度
+        self.log_queue.put(text)
 
     def _pump_logs(self) -> None:
         while True:

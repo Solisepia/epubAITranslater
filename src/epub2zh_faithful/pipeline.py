@@ -36,9 +36,10 @@ class PipelineError(RuntimeError):
 
 
 ProgressCallback = Callable[[str], None]
+StopCallback = Callable[[], bool]
 
 
-def run_translation(args: object, progress_cb: ProgressCallback | None = None) -> int:
+def run_translation(args: object, progress_cb: ProgressCallback | None = None, should_stop_cb: StopCallback | None = None) -> int:
     _emit(progress_cb, "Loading config and termbase...")
     config = load_config(getattr(args, "config", None))
     termbase = Termbase.load(getattr(args, "termbase", None))
@@ -128,6 +129,7 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None) -
             stats=stats,
             config=config,
             progress_cb=progress_cb,
+            should_stop_cb=should_stop_cb,
         )
         _repair_problematic_segments(
             segments=segments,
@@ -248,6 +250,7 @@ def _translate_with_cache(
     stats: RunStats,
     config: AppConfig,
     progress_cb: ProgressCallback | None = None,
+    should_stop_cb: StopCallback | None = None,
 ) -> dict[str, str]:
     out: dict[str, str] = {}
     pending: list[Segment] = []
@@ -288,6 +291,10 @@ def _translate_with_cache(
                 for idx, batch in enumerate(batches)
             }
             for future in as_completed(future_to_idx):
+                # 检查停止标志
+                if should_stop_cb and should_stop_cb():
+                    _emit(progress_cb, "[停止] 用户请求停止，取消剩余批次")
+                    break
                 idx = future_to_idx[future]
                 try:
                     draft_map, revise_map = future.result()
@@ -299,6 +306,10 @@ def _translate_with_cache(
                 _emit(progress_cb, f"[翻译] 批次完成：{idx + 1}/{len(batches)}")
     else:
         for idx, batch in enumerate(batches):
+            # 检查停止标志
+            if should_stop_cb and should_stop_cb():
+                _emit(progress_cb, "[停止] 用户请求停止，取消剩余批次")
+                break
             _emit(progress_cb, f"[翻译] 批次进行中：{idx + 1}/{len(batches)}")
             try:
                 draft_map, revise_map = _run_provider_batch(provider, batch, _collect_batch_term_hits(batch, termbase))
