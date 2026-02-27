@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import json
 import re
 import traceback
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -35,6 +35,10 @@ class PipelineError(RuntimeError):
     pass
 
 
+class PipelineCancelled(PipelineError):
+    pass
+
+
 ProgressCallback = Callable[[str], None]
 StopCallback = Callable[[], bool]
 
@@ -44,14 +48,17 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None, s
     config = load_config(getattr(args, "config", None))
     termbase = Termbase.load(getattr(args, "termbase", None))
     cache_path = getattr(args, "cache", None) or "cache.sqlite"
+
     provider_name = getattr(args, "provider")
-    actual_provider = provider_name if provider_name != "dashscope-mt" else "dashscope"
     if provider_name == "mixed":
         draft_provider = getattr(args, "draft_provider", None) or "openai"
         revise_provider = getattr(args, "revise_provider", None) or "deepseek"
+    elif provider_name == "dashscope-mt":
+        draft_provider = getattr(args, "draft_provider", None) or "dashscope-mt"
+        revise_provider = getattr(args, "revise_provider", None) or "none"
     else:
-        draft_provider = getattr(args, "draft_provider", None) or actual_provider
-        revise_provider = getattr(args, "revise_provider", None) or actual_provider
+        draft_provider = getattr(args, "draft_provider", None) or provider_name
+        revise_provider = getattr(args, "revise_provider", None) or provider_name
 
     model_arg = getattr(args, "model", None)
     if model_arg is None:
@@ -73,7 +80,7 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None, s
         revise_model=getattr(args, "revise_model", None),
     )
 
-    run_id = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     output_path = Path(getattr(args, "output"))
     artifacts_dir = ensure_dir(output_path.parent / f"{output_path.stem}_artifacts")
     qa_report_path = artifacts_dir / "qa_report.json"
@@ -85,8 +92,11 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None, s
     book = None
     workdir_keep = bool(getattr(args, "keep_workdir", False))
     try:
+        _raise_if_cancelled(should_stop_cb, progress_cb, "Cancelled before provider initialization")
         _emit(progress_cb, "Initializing provider...")
         provider = LLMClientFactory.build(provider_settings, config)
+
+        _raise_if_cancelled(should_stop_cb, progress_cb, "Cancelled before EPUB unpack")
         _emit(progress_cb, "Unpacking EPUB...")
         book = unpack_epub(getattr(args, "input"), keep_workdir=workdir_keep)
         _emit(progress_cb, f"Workspace: {book.workspace_dir}")
@@ -131,6 +141,8 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None, s
             progress_cb=progress_cb,
             should_stop_cb=should_stop_cb,
         )
+
+        _raise_if_cancelled(should_stop_cb, progress_cb, "Cancelled before problematic-segment repair")
         _repair_problematic_segments(
             segments=segments,
             segment_translations=segment_translations,
@@ -141,7 +153,10 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None, s
             max_concurrency=max(1, int(getattr(args, "max_concurrency", 2))),
             stats=stats,
             progress_cb=progress_cb,
+            should_stop_cb=should_stop_cb,
         )
+
+        _raise_if_cancelled(should_stop_cb, progress_cb, "Cancelled before writing outputs")
         _emit(
             progress_cb,
             f"Translation complete: translated={stats.translated_segments}, cached={stats.cached_segments}, llm_calls={stats.llm_calls}",
@@ -165,6 +180,7 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None, s
         toc_translation_map = {task.id: node_translations.get(task.id, "") for task in toc_tasks}
         apply_toc_translations(book.workspace_dir, toc_translation_map, toc_tasks)
 
+        _raise_if_cancelled(should_stop_cb, progress_cb, "Cancelled before QA")
         issues = run_qa(
             workdir=book.workspace_dir,
             config=config,
@@ -188,6 +204,7 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None, s
             summary_path=str(qa_summary_path),
         )
 
+        _raise_if_cancelled(should_stop_cb, progress_cb, "Cancelled before EPUB repack")
         _emit(progress_cb, "Repacking EPUB...")
         repack_epub(book.workspace_dir, getattr(args, "output"))
         store.commit()
@@ -198,6 +215,17 @@ def run_translation(args: object, progress_cb: ProgressCallback | None = None, s
         _emit(progress_cb, "Finished with exit code 2 (QA errors present)")
         return 2
 
+    except PipelineCancelled as exc:
+        store.record_error(run_id, "cancelled", str(exc))
+        store.commit()
+        _write_failure_artifacts(
+            qa_report_path=qa_report_path,
+            qa_summary_path=qa_summary_path,
+            message=str(exc),
+            stage="cancelled",
+        )
+        _emit(progress_cb, f"Cancelled: {exc}")
+        return 130
     except ProviderError as exc:
         store.record_error(run_id, "provider", str(exc))
         store.commit()
@@ -269,53 +297,91 @@ def _translate_with_cache(
                 stats.cached_segments += 1
         else:
             pending.append(seg)
+
     _emit(
         progress_cb,
         f"Cache scan done: hit={stats.cached_segments}, pending={len(pending)}, skipped_suspicious={suspicious_cache}",
     )
+    _raise_if_cancelled(should_stop_cb, progress_cb, "Cancelled before batch translation")
 
     batches = group_segments_for_batches(
         pending,
         max_chars=config.segmentation.max_chars_per_batch,
         max_segments=config.segmentation.max_segments_per_batch,
     )
-    _emit(progress_cb, f"[翻译] 准备批次：{len(batches)} 批 (每批最多{config.segmentation.max_segments_per_batch} 段/{config.segmentation.max_chars_per_batch} 字符)")
+    _emit(
+        progress_cb,
+        f"Prepared batches: {len(batches)} (max_segments={config.segmentation.max_segments_per_batch}, "
+        f"max_chars={config.segmentation.max_chars_per_batch})",
+    )
 
     batch_outputs: dict[int, tuple[list[Segment], dict[str, str], dict[str, str]]] = {}
     failed_segment_ids: set[str] = set()
-    
+    cancel_requested = False
+
     if max_concurrency > 1 and len(batches) > 1:
         with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-            future_to_idx = {
-                executor.submit(_run_provider_batch, provider, batch, _collect_batch_term_hits(batch, termbase)): idx
-                for idx, batch in enumerate(batches)
-            }
-            for future in as_completed(future_to_idx):
-                # 检查停止标志
-                if should_stop_cb and should_stop_cb():
-                    _emit(progress_cb, "[停止] 用户请求停止，取消剩余批次")
+            future_to_idx: dict[Future[tuple[dict[str, str], dict[str, str]]], int] = {}
+            next_batch_idx = 0
+            while next_batch_idx < len(batches) or future_to_idx:
+                if not cancel_requested and _is_cancelled(should_stop_cb):
+                    cancel_requested = True
+                    _emit(progress_cb, "Stop requested: no more new batches will be submitted")
+
+                while (
+                    not cancel_requested
+                    and next_batch_idx < len(batches)
+                    and len(future_to_idx) < max_concurrency
+                ):
+                    idx = next_batch_idx
+                    batch = batches[idx]
+                    future = executor.submit(
+                        _run_provider_batch,
+                        provider,
+                        batch,
+                        _collect_batch_term_hits(batch, termbase),
+                        should_stop_cb,
+                    )
+                    future_to_idx[future] = idx
+                    next_batch_idx += 1
+
+                if not future_to_idx:
                     break
-                idx = future_to_idx[future]
-                try:
-                    draft_map, revise_map = future.result()
-                    batch_outputs[idx] = (batches[idx], draft_map, revise_map)
-                except Exception as e:
-                    _emit(progress_cb, f"[错误] 批次 {idx + 1} 翻译失败：{e}")
-                    for seg in batches[idx]:
-                        failed_segment_ids.add(seg.id)
-                _emit(progress_cb, f"[翻译] 批次完成：{idx + 1}/{len(batches)}")
+
+                done, _ = wait(tuple(future_to_idx.keys()), timeout=0.2, return_when=FIRST_COMPLETED)
+                for future in done:
+                    idx = future_to_idx.pop(future)
+                    try:
+                        draft_map, revise_map = future.result()
+                        batch_outputs[idx] = (batches[idx], draft_map, revise_map)
+                    except PipelineCancelled:
+                        cancel_requested = True
+                    except Exception as exc:  # noqa: BLE001
+                        _emit(progress_cb, f"Batch {idx + 1} failed: {exc}")
+                        for seg in batches[idx]:
+                            failed_segment_ids.add(seg.id)
+                    _emit(progress_cb, f"Batch completed: {idx + 1}/{len(batches)}")
     else:
         for idx, batch in enumerate(batches):
-            # 检查停止标志
-            if should_stop_cb and should_stop_cb():
-                _emit(progress_cb, "[停止] 用户请求停止，取消剩余批次")
+            if _is_cancelled(should_stop_cb):
+                cancel_requested = True
+                _emit(progress_cb, "Stop requested: ending batch loop")
                 break
-            _emit(progress_cb, f"[翻译] 批次进行中：{idx + 1}/{len(batches)}")
+            _emit(progress_cb, f"Batch running: {idx + 1}/{len(batches)}")
             try:
-                draft_map, revise_map = _run_provider_batch(provider, batch, _collect_batch_term_hits(batch, termbase))
+                draft_map, revise_map = _run_provider_batch(
+                    provider,
+                    batch,
+                    _collect_batch_term_hits(batch, termbase),
+                    should_stop_cb,
+                )
                 batch_outputs[idx] = (batch, draft_map, revise_map)
-            except Exception as e:
-                _emit(progress_cb, f"[错误] 批次 {idx + 1} 翻译失败：{e}")
+            except PipelineCancelled:
+                cancel_requested = True
+                _emit(progress_cb, "Stop requested during batch run")
+                break
+            except Exception as exc:  # noqa: BLE001
+                _emit(progress_cb, f"Batch {idx + 1} failed: {exc}")
                 for seg in batch:
                     failed_segment_ids.add(seg.id)
             _emit(progress_cb, f"Batch completed: {idx + 1}/{len(batches)}")
@@ -338,11 +404,15 @@ def _translate_with_cache(
 
         stats.llm_calls += 1
         store.commit()
-    
-    # 注意：失败的段落会在后续的 _repair_problematic_segments 中统一处理
-    # 这里只记录日志，不进行重试
+
     if failed_segment_ids:
-        _emit(progress_cb, f"[注意] {len(failed_segment_ids)} 个段落翻译异常，将在重翻阶段处理")
+        stats.failed_segments += len(failed_segment_ids)
+        _emit(
+            progress_cb,
+            f"Failed segments in primary pass: {len(failed_segment_ids)} (will be handled in repair phase)",
+        )
+    if cancel_requested:
+        raise PipelineCancelled("Cancelled by user during translation")
 
     return out
 
@@ -360,15 +430,17 @@ def _run_provider_batch(
     provider: object,
     batch: list[Segment],
     term_hits: list[dict[str, str | bool]],
-    timeout_seconds: int = 60,
+    should_stop_cb: StopCallback | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
+    _raise_if_cancelled(should_stop_cb, None, "Cancelled before provider batch call")
     try:
         draft = provider.translate_segments(batch, term_hits)
         draft = post_edit(draft)
+        _raise_if_cancelled(should_stop_cb, None, "Cancelled before revise call")
         revise = provider.revise_segments(batch, draft, term_hits)
-    except Exception as e:
-        raise RuntimeError(f"Batch translation failed: {e}") from e
-    
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Batch translation failed: {exc}") from exc
+
     draft_map = {item.id: item.translated_text for item in draft}
     revise_map = {item.id: item.translated_text for item in revise}
     for seg in batch:
@@ -377,6 +449,7 @@ def _run_provider_batch(
             revise_map.get(seg.id, ""),
             draft_map.get(seg.id, ""),
         )
+
     retry_targets = [
         seg
         for seg in batch
@@ -386,6 +459,7 @@ def _run_provider_batch(
         )
     ]
     for _ in range(2):
+        _raise_if_cancelled(should_stop_cb, None, "Cancelled during retry loop")
         if not retry_targets:
             break
         try:
@@ -394,8 +468,8 @@ def _run_provider_batch(
             retry_draft_map = {item.id: item.translated_text for item in retry_draft}
             retry_revise_map = {item.id: item.translated_text for item in retry_revise}
         except Exception:
-            # Retry failed, keep original draft
             continue
+
         next_retry_targets: list[Segment] = []
         for seg in retry_targets:
             candidate = _select_preferred_candidate(
@@ -412,6 +486,7 @@ def _run_provider_batch(
             else:
                 next_retry_targets.append(seg)
         retry_targets = next_retry_targets
+
     return draft_map, revise_map
 
 
@@ -421,8 +496,27 @@ def _emit(progress_cb: ProgressCallback | None, message: str) -> None:
     try:
         progress_cb(message)
     except Exception:
-        # Progress reporting must never break translation pipeline.
         return
+
+
+def _is_cancelled(should_stop_cb: StopCallback | None) -> bool:
+    if should_stop_cb is None:
+        return False
+    try:
+        return bool(should_stop_cb())
+    except Exception:
+        return False
+
+
+def _raise_if_cancelled(
+    should_stop_cb: StopCallback | None,
+    progress_cb: ProgressCallback | None,
+    message: str,
+) -> None:
+    if not _is_cancelled(should_stop_cb):
+        return
+    _emit(progress_cb, message)
+    raise PipelineCancelled(message)
 
 
 LATIN_LETTER_RE = re.compile(r"[A-Za-z]")
@@ -500,40 +594,41 @@ def _repair_problematic_segments(
     max_concurrency: int,
     stats: RunStats,
     progress_cb: ProgressCallback | None = None,
+    should_stop_cb: StopCallback | None = None,
 ) -> None:
+    del max_concurrency
+
+    if _is_cancelled(should_stop_cb):
+        _emit(progress_cb, "Stop requested: skipping repair phase")
+        return
+
     pending = [seg for seg in segments if _needs_problem_repair(seg, segment_translations.get(seg.id, ""))]
     if not pending:
         return
 
-    _emit(progress_cb, f"[重翻] 开始处理问题段落：{len(pending)} 个")
-
-    single_batches = [[seg] for seg in pending]
-    batch_outputs: dict[int, tuple[list[Segment], dict[str, str], dict[str, str]]] = {}
-    if max_concurrency > 1 and len(single_batches) > 1:
-        with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-            future_to_idx = {
-                executor.submit(_run_provider_batch, provider, batch, _collect_batch_term_hits(batch, termbase)): idx
-                for idx, batch in enumerate(single_batches)
-            }
-            for future in as_completed(future_to_idx):
-                idx = future_to_idx[future]
-                try:
-                    draft_map, revise_map = future.result()
-                    batch_outputs[idx] = (single_batches[idx], draft_map, revise_map)
-                except Exception as e:
-                    _emit(progress_cb, f"[错误] 重翻段落失败：{e}")
-    else:
-        for idx, batch in enumerate(single_batches):
-            try:
-                draft_map, revise_map = _run_provider_batch(provider, batch, _collect_batch_term_hits(batch, termbase))
-                batch_outputs[idx] = (batch, draft_map, revise_map)
-            except Exception as e:
-                _emit(progress_cb, f"[错误] 重翻段落失败：{e}")
+    _emit(progress_cb, f"Repair phase started for problematic segments: {len(pending)}")
 
     still_bad = 0
-    for idx in sorted(batch_outputs.keys()):
-        batch, draft_map, revise_map = batch_outputs[idx]
-        seg = batch[0]
+    for seg in pending:
+        if _is_cancelled(should_stop_cb):
+            _emit(progress_cb, "Stop requested: ending repair phase early")
+            break
+        batch = [seg]
+        try:
+            draft_map, revise_map = _run_provider_batch(
+                provider,
+                batch,
+                _collect_batch_term_hits(batch, termbase),
+                should_stop_cb,
+            )
+        except PipelineCancelled:
+            _emit(progress_cb, "Stop requested: ending repair phase early")
+            break
+        except Exception as exc:  # noqa: BLE001
+            _emit(progress_cb, f"Repair failed for segment {seg.id}: {exc}")
+            stats.failed_segments += 1
+            continue
+
         out_text = _select_preferred_candidate(
             seg.source_text,
             revise_map.get(seg.id, ""),
@@ -554,11 +649,11 @@ def _repair_problematic_segments(
         stats.llm_calls += 1
 
     store.commit()
-    
+
     if still_bad > 0:
-        _emit(progress_cb, f"[警告] 重翻完成：仍有 {still_bad} 个段落未解决，已保留原文")
+        _emit(progress_cb, f"Repair completed with unresolved segments: {still_bad}")
     else:
-        _emit(progress_cb, f"[重翻] 完成：所有问题段落已解决")
+        _emit(progress_cb, "Repair phase completed with all target segments fixed")
 
 
 def _write_failure_artifacts(qa_report_path: Path, qa_summary_path: Path, message: str, stage: str) -> None:

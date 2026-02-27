@@ -267,7 +267,7 @@ class DashScopeProvider(BaseChatProvider):
         if self._mt_model:
             out: list[TranslationResult] = []
             for seg in segments:
-                payload = _build_revise_payload([seg], termbase_hits, self.config.style)
+                payload = _build_revise_payload([seg], draft_results, termbase_hits, self.config.style)
                 out.extend(self._call_with_retry(payload, expected_ids=[seg.id], strict_json=False))
             return out
         return super().revise_segments(segments, draft_results, termbase_hits)

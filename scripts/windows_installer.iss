@@ -1,6 +1,6 @@
 #define MyAppName "epub2zh-faithful-client"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.1"
+  #define MyAppVersion "0.1.2"
 #endif
 #ifndef MySourceDir
   #define MySourceDir "..\dist\epub2zh-faithful-client"

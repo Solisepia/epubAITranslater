@@ -288,6 +288,9 @@ class TranslatorUI:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.is_running = False
+        self.is_stopping = False
+        self.stop_event = threading.Event()
+        self.close_after_stop = False
         self.worker_thread: threading.Thread | None = None
         self.log_queue: Queue[str] = Queue()
         self._save_job: str | None = None
@@ -368,7 +371,7 @@ class TranslatorUI:
         self.run_btn = ttk.Button(actions, text="Start Translation", command=self._start)
         self.run_btn.pack(side=tk.LEFT)
 
-        self.pause_btn = ttk.Button(actions, text="Pause", command=self._toggle_pause, state="disabled")
+        self.pause_btn = ttk.Button(actions, text="Stop", command=self._toggle_pause, state="disabled")
         self.pause_btn.pack(side=tk.LEFT, padx=(8, 0))
 
         self.generate_btn = ttk.Button(actions, text="Generate Termbase", command=self._start_generate_termbase)
@@ -460,7 +463,7 @@ class TranslatorUI:
             self.revise_provider.set("none")
             self.model.set("qwen-plus")
         elif current == "dashscope-mt":
-            self.draft_provider.set("dashscope")
+            self.draft_provider.set("dashscope-mt")
             self.revise_provider.set("none")
             self.model.set("qwen-mt-plus")
         elif current == "mixed":
@@ -497,7 +500,9 @@ class TranslatorUI:
         if args is None:
             return
 
+        self.stop_event.clear()
         self.is_running = True
+        self.is_stopping = False
         self.run_btn.configure(state="disabled")
         self.generate_btn.configure(state="disabled")
         self.edit_config_btn.configure(state="disabled")
@@ -537,7 +542,9 @@ class TranslatorUI:
         fill_model = self.model.get().strip() or "qwen-plus"
         config_path = self.config_path.get().strip() or None
 
+        self.stop_event.clear()
         self.is_running = True
+        self.is_stopping = False
         self.run_btn.configure(state="disabled")
         self.generate_btn.configure(state="disabled")
         self.edit_config_btn.configure(state="disabled")
@@ -600,10 +607,9 @@ class TranslatorUI:
         )
 
     def _run_worker(self, args: Namespace) -> None:
-        # 创建停止检查回调
-        should_stop = lambda: not self.is_running
+        should_stop = lambda: self.stop_event.is_set()
         code = run_translation(args, progress_cb=self._enqueue_progress, should_stop_cb=should_stop)
-        self.root.after(0, lambda: self._finish_translation(code))
+        self._safe_after(lambda: self._finish_translation(code))
 
     def _run_generate_worker(
         self,
@@ -630,13 +636,18 @@ class TranslatorUI:
                 ),
                 progress_cb=self._enqueue_progress,
                 llm_config=cfg,
+                should_stop_cb=lambda: self.stop_event.is_set(),
             )
-            self.root.after(0, lambda: self._finish_generate(stats, output_termbase))
+            self._safe_after(lambda: self._finish_generate(stats, output_termbase))
         except Exception as exc:  # noqa: BLE001
-            self.root.after(0, lambda: self._finish_generate_error(str(exc)))
+            # Exception variables are cleared after except; capture eagerly for Tk callback.
+            message = str(exc)
+            self._safe_after(lambda msg=message: self._finish_generate_error(msg))
 
     def _finish_translation(self, code: int) -> None:
         self.is_running = False
+        self.is_stopping = False
+        self.stop_event.clear()
         self.pause_btn.configure(state="disabled", text="Stop")
         self.run_btn.configure(state="normal")
         self.generate_btn.configure(state="normal")
@@ -651,14 +662,25 @@ class TranslatorUI:
         self._log(f"QA summary: {artifacts / 'qa_summary.md'}")
 
         if code == 0:
-            messagebox.showinfo("Done", "Translation finished: QA passed")
+            if not self.close_after_stop:
+                messagebox.showinfo("Done", "Translation finished: QA passed")
         elif code == 2:
-            messagebox.showwarning("Finished", "Translation finished but QA has errors (exit=2)")
+            if not self.close_after_stop:
+                messagebox.showwarning("Finished", "Translation finished but QA has errors (exit=2)")
+        elif code == 130:
+            self.status_text.set("cancelled")
+            self._log("Task cancelled by user")
+            if not self.close_after_stop:
+                messagebox.showinfo("Stopped", "Task cancelled")
         else:
-            messagebox.showerror("Failed", "Translation failed (exit=1)")
+            if not self.close_after_stop:
+                messagebox.showerror("Failed", f"Translation failed (exit={code})")
+        self._maybe_close_after_stop()
 
     def _finish_generate(self, stats: dict[str, int], output_termbase: str) -> None:
         self.is_running = False
+        self.is_stopping = False
+        self.stop_event.clear()
         self.pause_btn.configure(state="disabled", text="Stop")
         self.run_btn.configure(state="normal")
         self.generate_btn.configure(state="normal")
@@ -673,17 +695,31 @@ class TranslatorUI:
             f"total={stats['total_terms_in_file']}"
         )
         self._log(f"Termbase path: {Path(output_termbase).resolve()}")
-        messagebox.showinfo("Done", f"Termbase generated:\n{output_termbase}")
+        if not self.close_after_stop:
+            messagebox.showinfo("Done", f"Termbase generated:\n{output_termbase}")
+        self._maybe_close_after_stop()
 
     def _finish_generate_error(self, message: str) -> None:
         self.is_running = False
+        self.is_stopping = False
+        self.stop_event.clear()
         self.pause_btn.configure(state="disabled", text="Stop")
         self.run_btn.configure(state="normal")
         self.generate_btn.configure(state="normal")
         self.edit_config_btn.configure(state="normal")
-        self.status_text.set("generation failed")
-        self._log(f"Termbase generation failed: {message}")
-        messagebox.showerror("Failed", f"Termbase generation failed:\n{message}")
+
+        lower_msg = message.lower()
+        if "cancelled" in lower_msg:
+            self.status_text.set("cancelled")
+            self._log(f"Termbase generation cancelled: {message}")
+            if not self.close_after_stop:
+                messagebox.showinfo("Stopped", "Termbase generation cancelled")
+        else:
+            self.status_text.set("generation failed")
+            self._log(f"Termbase generation failed: {message}")
+            if not self.close_after_stop:
+                messagebox.showerror("Failed", f"Termbase generation failed:\n{message}")
+        self._maybe_close_after_stop()
 
     def _log(self, text: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
@@ -691,8 +727,13 @@ class TranslatorUI:
         self.log.see(tk.END)
 
     def _enqueue_progress(self, text: str) -> None:
-        # 即使停止了也继续添加日志，让用户看到进度
         self.log_queue.put(text)
+
+    def _safe_after(self, callback: Callable[[], None]) -> None:
+        try:
+            self.root.after(0, callback)
+        except tk.TclError:
+            return
 
     def _pump_logs(self) -> None:
         while True:
@@ -762,25 +803,42 @@ class TranslatorUI:
 
     def _on_close(self) -> None:
         if self.is_running:
-            self._log("Stopping translation...")
-            self.is_running = False
-            # 不等待线程完成，直接关闭窗口
-            # 后台线程会在 API 超时后自动终止
+            self.close_after_stop = True
+            self._request_stop("Stopping task before closing...")
+            self._wait_worker_then_close()
+            return
         self._save_ui_state()
         self.root.destroy()
 
     def _toggle_pause(self) -> None:
         if not self.is_running:
             return
-        self.is_running = False
+        self._request_stop("Stopping task...")
+
+    def _request_stop(self, reason: str) -> None:
+        if not self.is_running or self.is_stopping:
+            return
+        self.is_stopping = True
+        self.stop_event.set()
         self.pause_btn.configure(state="disabled", text="Stopping...")
         self.status_text.set("stopping")
-        self._log("Stopping translation...")
-        self._log("注意：正在进行的 API 调用会在 60 秒超时后自动终止")
-        self._log("已翻译的段落已保存到缓存，下次可继续")
-        # 不关闭窗口，让用户看到日志
-        # 后台线程会在 60 秒超时后自动终止
+        self._log(reason)
+        self._log("In-flight API calls may take up to request timeout/retry window to exit")
 
+    def _wait_worker_then_close(self) -> None:
+        worker = self.worker_thread
+        if worker is not None and worker.is_alive():
+            self.root.after(150, self._wait_worker_then_close)
+            return
+        self._save_ui_state()
+        self.root.destroy()
+
+    def _maybe_close_after_stop(self) -> None:
+        if not self.close_after_stop:
+            return
+        self.close_after_stop = False
+        self._save_ui_state()
+        self.root.destroy()
 
 def main() -> int:
     root = tk.Tk()

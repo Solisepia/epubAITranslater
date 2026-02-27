@@ -18,6 +18,11 @@ from .terminology import format_term_target, has_cjk_left
 from .utils import has_any_class, localname
 
 ProgressCallback = Callable[[str], None]
+StopCallback = Callable[[], bool]
+
+
+class GenerationCancelled(RuntimeError):
+    pass
 
 BLACKLIST_CONTAINERS = {"code", "pre", "kbd", "samp", "var", "script", "style", "math", "annotation", "semantics"}
 NO_TRANSLATE_CLASSES = {"no-translate", "notranslate", "raw", "code"}
@@ -76,7 +81,9 @@ def generate_termbase(
     options: GenerateOptions,
     progress_cb: ProgressCallback | None = None,
     llm_config: AppConfig | None = None,
+    should_stop_cb: StopCallback | None = None,
 ) -> dict[str, int]:
+    _raise_if_cancelled(should_stop_cb, progress_cb, "Cancelled before termbase unpack")
     _emit(progress_cb, "[术语表生成] 开始解压 EPUB...")
     book = unpack_epub(input_epub)
 
@@ -85,6 +92,7 @@ def generate_termbase(
         total_text_nodes = 0
 
         for rel in book.xhtml_files:
+            _raise_if_cancelled(should_stop_cb, progress_cb, "Cancelled during EPUB scan")
             full = Path(book.workspace_dir) / rel
             tree = parse_xml_file(str(full))
 
@@ -143,7 +151,13 @@ def generate_termbase(
         rejected_non_cjk_targets = 0
         if options.fill_empty_targets:
             fill_cfg = llm_config or AppConfig()
-            filled_targets, rejected_non_cjk_targets = _fill_empty_targets_with_ai(payload["terms"], options, fill_cfg, progress_cb)
+            filled_targets, rejected_non_cjk_targets = _fill_empty_targets_with_ai(
+                payload["terms"],
+                options,
+                fill_cfg,
+                progress_cb,
+                should_stop_cb,
+            )
         cleared_non_cjk_targets = _normalize_term_targets(payload["terms"])
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -283,6 +297,7 @@ def _fill_empty_targets_with_ai(
     options: GenerateOptions,
     config: AppConfig,
     progress_cb: ProgressCallback | None,
+    should_stop_cb: StopCallback | None = None,
 ) -> tuple[int, int]:
     empty_terms = [item for item in terms if str(item.get("source", "")).strip() and not str(item.get("target", "")).strip()]
     if not empty_terms:
@@ -315,6 +330,7 @@ def _fill_empty_targets_with_ai(
     total_batches = (len(empty_terms) + batch_size - 1) // batch_size
 
     for batch_idx, start in enumerate(range(0, len(empty_terms), batch_size), start=1):
+        _raise_if_cancelled(should_stop_cb, progress_cb, "Cancelled during AI term filling")
         batch_terms = empty_terms[start : start + batch_size]
         segments = [_term_to_segment(start + i + 1, item) for i, item in enumerate(batch_terms)]
         results = provider.translate_segments(segments, termbase_hits=[])
@@ -377,3 +393,23 @@ def _emit(progress_cb: ProgressCallback | None, message: str) -> None:
         progress_cb(message)
     except Exception:
         return
+
+
+def _is_cancelled(should_stop_cb: StopCallback | None) -> bool:
+    if should_stop_cb is None:
+        return False
+    try:
+        return bool(should_stop_cb())
+    except Exception:
+        return False
+
+
+def _raise_if_cancelled(
+    should_stop_cb: StopCallback | None,
+    progress_cb: ProgressCallback | None,
+    message: str,
+) -> None:
+    if not _is_cancelled(should_stop_cb):
+        return
+    _emit(progress_cb, message)
+    raise GenerationCancelled(message)
